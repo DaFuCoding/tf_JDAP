@@ -1,0 +1,8 @@
+*.so
+*.pyc
+configs
+evaluation
+logdir
+models
+tfrecords
+.idea
