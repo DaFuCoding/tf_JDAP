@@ -10,8 +10,8 @@ LABEL_FILE="/home/dafu/data/jdap_data/${IMAGE_SIZE}/train_${IMAGE_SIZE}.txt"
 python ./prepare_data/multithread_create_tfrecords.py \
     --image_root_path=${ROOT_PATH} \
     --dataset_file=${LABEL_FILE} \
-    --dataset_name='pnet_aug' \
-    --output_dir='./tfrecords' \
+    --dataset_name='pnet' \
+    --output_dir='./tfrecords/pnet' \
     --num_shards=4 \
     --num_threads=4 \
     --image_size=12 \

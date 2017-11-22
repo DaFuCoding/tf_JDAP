@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from configs.config import config
 
 
 class FcnDetector(object):

@@ -1,5 +1,6 @@
 *.so
 *.pyc
+test
 configs
 evaluation
 logdir

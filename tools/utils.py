@@ -1,10 +1,11 @@
 import cv2
 import numpy as np
 import numpy.random as npr
-# if sys.version_info[0] == 2:
-#     import Queue as queue
-# elif sys.version_info[0] == 3:
-#     import queue
+import sys
+if sys.version_info[0] == 2:
+    import Queue as queue
+elif sys.version_info[0] == 3:
+    import queue
 
 
 def IoU(box, boxes):
@@ -164,8 +165,9 @@ class DataPretreat(object):
 
     @property
     def random_resize_method(self):
-        select_method = npr.random(3).argmax()
-        return self.resize_method[select_method]
+        #select_method = npr.random(3).argmax()
+        #return self.resize_method[select_method]
+        return self.resize_method[2]
 
     def uchar_protect(self, array):
         over_idx = np.where(array > 255)
@@ -214,28 +216,3 @@ class DataPretreat(object):
             else:
                 image = self.Contrast(image, contrast)
         return image
-
-# image_grey = cv2.imread("/home/dafu/Pictures/1003.jpg")
-# image_rgb = cv2.imread("/home/dafu/Pictures/1001.jpg")
-# image = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
-# image = image[:,:, np.newaxis]
-# image = np.repeat(image, 3, axis=2)
-# print(image.shape)
-# cv2.imshow("a", image)
-# cv2.waitKey(0)
-# cv2.imshow("orign_g", image_grey)
-# cv2.imshow("orign_r", image_rgb)
-# for i in range(100):
-#     # b_g = Brightness(image_grey)
-#     # b_r = Brightness(image_rgb)
-#     # cv2.imshow("b_g", b_g)
-#     # cv2.imshow("b_r", b_r)
-#     # c_g = Contrast(image_grey)
-#     # c_r = Contrast(image_rgb)
-#     # cv2.imshow("c_g", c_g)
-#     # cv2.imshow("c_r", c_r)
-#     s_g = ColorJitter(image_grey)
-#     s_r = ColorJitter(image_rgb)
-#     cv2.imshow("s_g", s_g)
-#     cv2.imshow("s_r", s_r)
-#     cv2.waitKey(0)

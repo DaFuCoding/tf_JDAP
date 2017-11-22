@@ -146,13 +146,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--name_list', dest='name_list', help='output data folder',
-                        #default='/home/dafu/data/FDDB/RYFdefined/FDDBNameList.txt',
-                        default='/home/dafu/data/WIDER_FACE/wider_face_split/wider_name_list.txt',
+                        default='/home/dafu/data/FDDB/RYFdefined/FDDBNameList.txt',
+                        #default='/home/dafu/data/WIDER_FACE/wider_face_split/wider_name_list.txt',
                         #default='/home/dafu/data/AFLW/data/aflw_rect_pose.txt',
                         type=str)
     parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
-                        #default='/home/dafu/data/FDDB',
-                        default='/home/dafu/data/WIDER_FACE/WIDER_train/images',
+                        default='/home/dafu/data/FDDB',
+                        #default='/home/dafu/data/WIDER_FACE/WIDER_train/images',
                         #default='/home/dafu/data/AFLW/data',
                         type=str)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
@@ -167,10 +167,12 @@ def parse_args():
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug/pnet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug_MC/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug_MC/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug_LB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7_LB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7_wo_pooling/pnet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_order_SB/pnet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_shuffle_SB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_FL/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test_FL_relu/pnet',
@@ -187,11 +189,11 @@ def parse_args():
                                 '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_landmark_pose_OHEM_0.7/onet'
                                 ], type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
-                        default=[16, 16, 16], type=int)
+                        default=[6, 16, 16], type=int)
     parser.add_argument('--batch_size', dest='batch_size', help='list of batch size used in prediction', nargs="+",
                         default=[2048, 256, 16], type=int)
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
-                        default=[0.4, 0.1, 0.1], type=float)
+                        default=[0.6, 0.1, 0.1], type=float)
     parser.add_argument('--min_face', dest='min_face', help='minimum face size for detection',
                         default=24, type=int)
     parser.add_argument('--stride', dest='stride', help='stride of sliding window',

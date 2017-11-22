@@ -15,7 +15,6 @@ from nets import JDAP_Net
 import train_core
 import re
 
-import pdb
 
 flags = tf.app.flags
 flags.DEFINE_string("gpu_id", "0", "gpu device id.")
@@ -60,7 +59,7 @@ FLAGS = flags.FLAGS
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', FLAGS.gpu_id)
 
 
-def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, frequent=500):
+def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, val_tfrecords=None, frequent=500):
     # Set logging verbosity
     tf.logging.set_verbosity(tf.logging.INFO)
     with tf.Graph().as_default():
@@ -68,10 +67,22 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
         # Get Detect train data from tfrecords. #
         #########################################
         cls_data_label = stat_tfrecords.ReadTFRecord(tfrecords, netSize, 3, 'reg_label', 4)
+        # https://stackoverflow.com/questions/43028683/whats-going-on-in-tf-train-shuffle-batch-and-tf-train-batch?answertab=votes#tab-top
+        # Different batch_size and capacity and min_after_dequeue impact data selected.
         image_batch, cls_label_batch, reg_label_batch = \
             tf.train.shuffle_batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
-                                   batch_size=FLAGS.batch_size, capacity=100000, min_after_dequeue=40000, num_threads=16)
-
+                                   batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16)
+        # image_batch, cls_label_batch, reg_label_batch = \
+        #     tf.train.batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
+        #                    batch_size=FLAGS.batch_size, capacity=100000, num_threads=16)
+        #########################################
+        # Get Detect train data from tfrecords. #
+        #########################################
+        # if val_tfrecords is not None:
+        #     val_cls_data_label = stat_tfrecords.ReadTFRecord(val_tfrecords, netSize, 3, 'reg_label', 4)
+        #     val_image_batch, val_cls_label_batch, val_reg_label_batch = \
+        #         tf.train.batch([val_cls_data_label['image'], val_cls_data_label['cls_label'],
+        #                         cls_data_label['reg_label']], batch_size=FLAGS.batch_size, num_threads=16)
         # Network Forward
         if FLAGS.is_ERC:
             cls_prob_op, bbox_pred_op, ERC1_loss_op, ERC2_loss_op, cls_loss_op, bbox_loss_op, end_points = \
@@ -91,7 +102,7 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
 
         optimizer = train_core.configure_optimizer(lr_op)
         if FLAGS.is_ERC:
-            train_op = optimizer.minimize(ERC1_loss_op+ERC2_loss_op+cls_loss_op+bbox_loss_op, global_step)
+            train_op = optimizer.minimize(ERC1_loss_op + ERC2_loss_op + cls_loss_op + bbox_loss_op, global_step)
         else:
             train_op = optimizer.minimize(train_core.task_add_weight(cls_loss_op, bbox_loss_op), global_step)
 
@@ -129,7 +140,7 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
         else:
             sess.run(tf.global_variables_initializer())
             start_epoch = 1
-        tf.train.start_queue_runners(sess=sess, coord=coord)
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
         summary_writer = tf.summary.FileWriter(logdir, sess.graph)
         summary_op = tf.summary.merge_all()
@@ -153,7 +164,8 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
             print("%s: Epoch: %d, cls loss: %4f, bbox loss: %4f " %
                   (datetime.now(), cur_epoch, np.mean(cls_loss_list), np.mean(bbox_loss_list)))
             saver.save(sess, model_prefix, cur_epoch)
-
+        coord.request_stop()
+        coord.join(threads)
 
 def main(_):
     if FLAGS.image_size == 12:

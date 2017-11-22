@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import numpy as np
 import numpy.random as npr
 import os
@@ -21,7 +23,7 @@ with open(os.path.join(save_data_dir, '%s/part_%s.txt' % (netSize, netSize)), 'r
 
 with open(os.path.join(dir_path, "train_%s.txt" % netSize), "w") as f:
     nums = [len(neg), len(pos), len(part)]
-    ratio = [1, 2, 3]
+    ratio = [1, 1.5, 3]
     base_num = len(pos)
     print(len(pos), len(part), len(neg), base_num)
     pos_keep = npr.choice(len(pos), size=base_num * ratio[0], replace=False)
@@ -40,3 +42,13 @@ with open(os.path.join(dir_path, "train_%s.txt" % netSize), "w") as f:
         f.write(neg[i])
     for i in part_keep:
         f.write(part[i])
+
+with open(os.path.join(save_data_dir, '%s/val_pos_%s.txt' % (netSize, netSize)), 'r') as f:
+    val_pos = f.readlines()
+
+with open(os.path.join(save_data_dir, '%s/val_neg_%s.txt' % (netSize, netSize)), 'r') as f:
+    val_neg = f.readlines()
+
+with open(os.path.join(dir_path, "val_%s.txt" % netSize), "w") as f:
+    f.writelines(val_neg)
+    f.writelines(val_pos)
