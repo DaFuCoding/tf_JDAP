@@ -5,6 +5,7 @@ A face detection algorithm joint multi-task using cascade structure in CNN. This
 
 ### Requirement
 Quick overview of requirements:
+
 	- tensorflow 1.0.1(or more high)
 	- python 2.7
 	- opencv-python
