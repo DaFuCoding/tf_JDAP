@@ -9,7 +9,7 @@ class FcnDetector(object):
             self.width_op = tf.placeholder(tf.int32, name='image_width')
             self.height_op = tf.placeholder(tf.int32, name='image_height')
             image_reshape = tf.reshape(self.image_op, [1, self.height_op, self.width_op, 3])
-            self.cls_prob, self.bbox_pred = net_factory(image_reshape, is_training=False)
+            self.cls_prob, self.bbox_pred, self.end_points = net_factory(image_reshape, is_training=False)
             self.sess = tf.Session(
                 config=tf.ConfigProto(allow_soft_placement=True, gpu_options=tf.GPUOptions(allow_growth=True)))
             saver = tf.train.Saver()
@@ -17,7 +17,7 @@ class FcnDetector(object):
 
     def predict(self, databatch):
         height, width, _ = databatch.shape
-        cls_prob, bbox_pred = self.sess.run([self.cls_prob, self.bbox_pred],
+        cls_prob, bbox_pred, end_points = self.sess.run([self.cls_prob, self.bbox_pred, self.end_points],
                                             feed_dict={self.image_op: databatch, self.width_op: width,
                                                        self.height_op: height})
-        return cls_prob, bbox_pred
+        return cls_prob, bbox_pred, end_points

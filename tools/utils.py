@@ -65,6 +65,8 @@ def py_nms(dets, thresh, mode="Union"):
     :param thresh: retain overlap <= thresh
     :return: indexes to keep
     """
+    if len(dets) == 0:
+        return []
     x1 = dets[:, 0]
     y1 = dets[:, 1]
     x2 = dets[:, 2]
@@ -149,6 +151,97 @@ def pad(bboxes, w, h):
     return_list = [item.astype(np.int32) for item in return_list]
 
     return return_list
+
+
+def resize_image(img, scale):
+    """
+        resize image and transform dimention to [batchsize, channel, height, width]
+    Parameters:
+    ----------
+        img: numpy array , height x width x channel
+            input image, channels in BGR order here
+        scale: float number
+            scale factor of resize operation
+    Returns:
+    -------
+        transformed image tensor , 1 x channel x height x width
+    """
+    height, width, channels = img.shape
+    new_height = int(height * scale)     # resized new height
+    new_width = int(width * scale)       # resized new width
+    new_dim = (new_width, new_height)
+    img_resized = cv2.resize(img, new_dim, interpolation=cv2.INTER_LINEAR)      # resized image
+    img_resized = (img_resized - 127.5) * 0.0078125
+    return img_resized
+
+
+def resize_image_by_wh(img, tuple_wh):
+    """
+    Because opencv resize need new shape order is (width, height)
+    Args:
+        img: Origin image
+        tuple_wh: Resize size, type is tuple
+
+    Returns:
+        Normalization image by tuple_wh
+    """
+    img_resized = cv2.resize(img, tuple_wh, interpolation=cv2.INTER_LINEAR)      # resized image
+    img_resized = (img_resized - 127.5) * 0.0078125
+    return img_resized
+
+
+def calc_scale(image_height, image_width, min_face_size=24, scale_factor=0.709, pattern_size=12):
+    tuple_wh_scales = list()
+    scales = list()
+    current_scale = float(pattern_size) / min_face_size  # find initial scale
+    current_height = int(current_scale * image_height)
+    current_width = int(current_scale * image_width)
+    while min(current_height, current_width) >= pattern_size:
+        tuple_wh_scales.append((current_width, current_height))
+        scales.append(current_scale)
+        current_scale *= scale_factor
+        current_height = int(current_scale * image_height)
+        current_width = int(current_scale * image_width)
+
+    return scales, tuple_wh_scales
+
+
+def generate_bbox(cls_map, reg, scale, threshold):
+    """ generate bbox from feature map
+    Parameters:
+    ----------
+        map: numpy array , n x m x 1
+            detect score for each position
+        reg: numpy array , n x m x 4
+            bbox
+        scale: float number
+            scale of this detection
+        threshold: float number
+            detect threshold
+    Returns:
+    -------
+        bbox array
+    """
+    stride = 2
+    cellsize = 12
+
+    t_index = np.where(cls_map > threshold)
+
+    # find nothing
+    if t_index[0].size == 0:
+        return np.array([])
+    # bounding box regressor
+    dx1, dy1, dx2, dy2 = [reg[0, t_index[0], t_index[1], i] for i in range(4)]
+    reg = np.array([dx1, dy1, dx2, dy2])
+    score = cls_map[t_index[0], t_index[1]]
+    boundingbox = np.vstack([np.round((stride*t_index[1])/scale),
+                             np.round((stride*t_index[0])/scale),
+                             np.round((stride*t_index[1]+cellsize)/scale),
+                             np.round((stride*t_index[0]+cellsize)/scale),
+                             score.T,
+                             reg])
+
+    return boundingbox.T
 
 
 class DataPretreat(object):

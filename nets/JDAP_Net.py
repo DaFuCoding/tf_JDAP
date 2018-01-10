@@ -6,6 +6,10 @@ including:
 2. 12Net, 24Net, 48Net and 48LandmarkNet, 48PoseNet , 48LandmarkPoseNet
 3. Result OHEM Loss/Focal Loss of Classification and bbox regression and landmark regression and pose regression
 """
+# 0.1.0 version main consider 48Net about landmark and pose attribute
+__all__ = ['JDAP_12Net', 'JDAP_24Net', 'JDAP_48Net', 'JDAP_48Net_Lanmark',
+           'JDAP_48Net_Pose', 'JDAP_48Net_Lanmark_Pose']
+
 import tensorflow as tf
 from configs.config import config
 import tensorflow.contrib.slim as slim
@@ -13,7 +17,7 @@ import tensorflow.contrib.slim as slim
 FLAGS = tf.flags.FLAGS
 
 
-def prelu(inputs):
+def _prelu(inputs):
     with tf.variable_scope("prelu"):
         alphas = tf.get_variable('alpha', inputs.get_shape()[-1],
                                  initializer=tf.constant_initializer(0.0),
@@ -168,11 +172,12 @@ def JDAP_12Net(inputs, cls_label=None, bbox_target=None, is_training=True):
     with tf.variable_scope("JDAP_12Net") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, biases_initializer=tf.zeros_initializer(),
+                            activation_fn=_prelu, biases_initializer=tf.zeros_initializer(),
                             weights_regularizer=slim.l2_regularizer(0.00001), padding='valid',
+                            # data_format='NCHW',
                             outputs_collections=[end_points_collection]):
             net = slim.conv2d(inputs, 10, kernel_size=3, scope='conv1')
-            net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
+            net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1', padding='SAME')
 
             print(net.get_shape())
 
@@ -204,7 +209,7 @@ def JDAP_12Net(inputs, cls_label=None, bbox_target=None, is_training=True):
                 return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
             else:
                 cls_prob = tf.nn.softmax(logits=conv4_1)
-                return cls_prob, bbox_pred
+                return cls_prob, bbox_pred, end_points
                 #return [cls_prob, bbox_pred, conv4_1]
 
 
@@ -212,14 +217,14 @@ def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
     with tf.variable_scope("JDAP_24Net") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
                                 weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=None,
                                 outputs_collections=[end_points_collection]):
                 net = slim.conv2d(inputs, 28, kernel_size=3, scope='conv1')
-                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='same')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='SAME')
                 print(net.get_shape())
 
                 net = slim.conv2d(net, 48, kernel_size=3, scope='conv2')
@@ -230,7 +235,7 @@ def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 128, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 128, activation_fn=_prelu, scope='fc1')
                 print(net.get_shape())
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
@@ -251,7 +256,7 @@ def JDAP_24Net_ERC(inputs, label=None, bbox_target=None, is_training=True):
     with tf.variable_scope("JDAP_24Net_ERC") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
@@ -308,7 +313,7 @@ def JDAP_24Net_ERC(inputs, label=None, bbox_target=None, is_training=True):
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 128, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 128, activation_fn=_prelu, scope='fc1')
                 print(net.get_shape())
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
@@ -333,14 +338,14 @@ def JDAP_48Net(inputs, label=None, bbox_target=None, is_training=True):
     with tf.variable_scope("JDAP_48Net") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
                                 weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=None,
                                 outputs_collections=[end_points_collection]):
                 net = slim.conv2d(inputs, 32, kernel_size=3, scope='conv1')
-                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='same')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='SAME')
                 print(net.get_shape())
 
                 net = slim.conv2d(net, 64, kernel_size=3, scope='conv2')
@@ -355,7 +360,7 @@ def JDAP_48Net(inputs, label=None, bbox_target=None, is_training=True):
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 256, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
 
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
@@ -376,7 +381,7 @@ def JDAP_48Net_Lanmark(inputs, label=None, bbox_target=None, landmark_target=Non
     with tf.variable_scope("JDAP_48Net_Landmark") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
@@ -398,7 +403,7 @@ def JDAP_48Net_Lanmark(inputs, label=None, bbox_target=None, landmark_target=Non
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 256, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
 
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
@@ -424,7 +429,7 @@ def JDAP_48Net_Pose(inputs, label=None, bbox_target=None, pose_reg_target=None, 
     with tf.variable_scope("JDAP_48Net_Pose") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
@@ -446,7 +451,7 @@ def JDAP_48Net_Pose(inputs, label=None, bbox_target=None, pose_reg_target=None, 
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 256, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
 
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
@@ -471,7 +476,7 @@ def JDAP_48Net_Lanmark_Pose(inputs, label=None, bbox_target=None, landmark_targe
     with tf.variable_scope("JDAP_48Net_Landmark_Pose") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
-                            activation_fn=prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
                             biases_initializer=tf.zeros_initializer(), padding='valid',
                             outputs_collections=[end_points_collection]):
             with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
@@ -493,7 +498,7 @@ def JDAP_48Net_Lanmark_Pose(inputs, label=None, bbox_target=None, landmark_targe
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                net = slim.fully_connected(net, 256, activation_fn=prelu, scope='fc1')
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
 
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')

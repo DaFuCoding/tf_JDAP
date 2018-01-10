@@ -18,23 +18,23 @@ def JDAP_12Net(inputs):
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
                             activation_fn=prelu, biases_initializer=tf.zeros_initializer(),
                             weights_regularizer=slim.l2_regularizer(0.00001), padding='valid'):
-            # net = slim.conv2d(inputs, 10, kernel_size=3, scope='conv1')
-            # net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
-            #
-            # print(net.get_shape())
-            #
-            # net = slim.conv2d(net, 16, kernel_size=3, scope='conv2')
-            # net = slim.conv2d(net, 32, kernel_size=3, scope='conv3')
-            # print(net.get_shape())
-
-            net = slim.conv2d(inputs, 12, kernel_size=3, scope='conv1')
+            net = slim.conv2d(inputs, 10, kernel_size=3, scope='conv1')
             net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
 
             print(net.get_shape())
 
-            net = slim.conv2d(net, 24, kernel_size=3, scope='conv2')
-            net = slim.conv2d(net, 36, kernel_size=3, scope='conv3')
+            net = slim.conv2d(net, 16, kernel_size=3, scope='conv2')
+            net = slim.conv2d(net, 32, kernel_size=3, scope='conv3')
             print(net.get_shape())
+            #
+            # net = slim.conv2d(inputs, 12, kernel_size=3, scope='conv1')
+            # net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
+            #
+            # print(net.get_shape())
+            #
+            # net = slim.conv2d(net, 24, kernel_size=3, scope='conv2')
+            # net = slim.conv2d(net, 36, kernel_size=3, scope='conv3')
+            # print(net.get_shape())
 
             conv4_1 = slim.conv2d(net, 2, kernel_size=1, scope='conv4_1', activation_fn=None)
             bbox_pred = slim.conv2d(net, 4, kernel_size=1, scope='conv4_2', activation_fn=None)
@@ -66,15 +66,20 @@ class FcnDetector(object):
                 # print(conv1)
 
 
-model_name = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_retrain/pnet-12'
+model_name = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7/pnet-12'
 
+import numpy as np
+from collections import OrderedDict
 
 class TestModel(unittest.TestCase):
     def test_get_variables_in_checkpoint_file(self):
         reader = pywrap_tensorflow.NewCheckpointReader(model_name)
         var_to_shape_map = reader.get_variable_to_shape_map()
         for var in var_to_shape_map:
-            print(var, var_to_shape_map[var])
+            if 'Momentum' not in var and 'Variable' not in var:
+                param_value = reader.get_tensor(var)
+                print(var, np.min(param_value), np.max(param_value), var_to_shape_map[var])
+
         return var_to_shape_map
 
 

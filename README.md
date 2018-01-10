@@ -17,13 +17,14 @@ Quick overview of requirements:
 	- AFLW
 
 ### Data Label Design
-##### Classification task:
+
+#### Classification task:
 Positive, Part, Negative sample label : image_name class_id bounding_box_regressor
 class_id: +1(Positive) -1(Part) 0(Negative)
 Negative bbox_regressor: 0 0 0 0(anything, but must keep 4 number)
 bounding_box_regressor: x1 y1 x2 y2(relative ground truth)
 
-##### Auxiliary task:
+#### Auxiliary task:
 Landmark sample label: image_name class_id landmark_regressor
 Pose sample label: image_name class_id pose_regressor
 class_id: -2(Landmark) -3(Pose)

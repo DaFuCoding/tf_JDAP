@@ -2,7 +2,7 @@ import cv2
 import time
 import numpy as np
 from configs.config import config
-from tools.utils import py_nms
+from tools.utils import py_nms, generate_bbox, resize_image_by_wh, calc_scale
 import matplotlib.pyplot as plt
 import random
 
@@ -26,7 +26,8 @@ class JDAPDetector(object):
         self.thresh = threshold
         self.scale_factor = scale_factor
         self.slide_window = slide_window
-
+        self.p_end_points = []
+        self.r_end_points = []
 
     def convert_to_square(self, bbox):
         """
@@ -73,67 +74,6 @@ class JDAPDetector(object):
         aug = reg_m * reg
         bbox_c[:, 0:4] = bbox_c[:, 0:4] + aug
         return bbox_c
-
-    def generate_bbox(self, map, reg, scale, threshold):
-        """
-            generate bbox from feature map
-        Parameters:
-        ----------
-            map: numpy array , n x m x 1
-                detect score for each position
-            reg: numpy array , n x m x 4
-                bbox
-            scale: float number
-                scale of this detection
-            threshold: float number
-                detect threshold
-        Returns:
-        -------
-            bbox array
-        """
-        stride = 2
-        cellsize = 12
-
-        t_index = np.where(map>threshold)
-
-        # find nothing
-        if t_index[0].size == 0:
-            return np.array([])
-
-        dx1, dy1, dx2, dy2 = [reg[0, t_index[0], t_index[1], i] for i in range(4)]
-
-        reg = np.array([dx1, dy1, dx2, dy2])
-        score = map[t_index[0], t_index[1]]
-        boundingbox = np.vstack([np.round((stride*t_index[1])/scale),
-                                 np.round((stride*t_index[0])/scale),
-                                 np.round((stride*t_index[1]+cellsize)/scale),
-                                 np.round((stride*t_index[0]+cellsize)/scale),
-                                 score.T,
-                                 reg])
-
-        return boundingbox.T
-
-    def resize_image(self, img, scale):
-        """
-            resize image and transform dimention to [batchsize, channel, height, width]
-        Parameters:
-        ----------
-            img: numpy array , height x width x channel
-                input image, channels in BGR order here
-            scale: float number
-                scale factor of resize operation
-        Returns:
-        -------
-            transformed image tensor , 1 x channel x height x width
-        """
-        height, width, channels = img.shape
-        new_height = int(height * scale)     # resized new height
-        new_width = int(width * scale)       # resized new width
-        new_dim = (new_width, new_height)
-        img_resized = cv2.resize(img, new_dim, interpolation=cv2.INTER_LINEAR)      # resized image
-        img_resized = (img_resized - 127.5) * 0.0078125
-        return img_resized
-
 
     def pad(self, bboxes, w, h):
         """
@@ -188,13 +128,18 @@ class JDAPDetector(object):
 
         return return_list
 
-    def detect_pnet(self, im):
+    def detect_pnet(self, image):
         """Get face candidates through pnet
 
         Parameters:
         ----------
-        im: numpy array
+        image: numpy array
             input image array
+
+        Intermediate:
+        ----------
+        end_points: numpy array
+            feature map differ layer
 
         Returns:
         -------
@@ -203,102 +148,42 @@ class JDAPDetector(object):
         boxes_c: numpy array
             boxes after calibration
         """
-        h, w, c = im.shape
-        net_size = 12
-
-        current_scale = float(net_size) / self.min_face_size    # find initial scale
-        im_resized = self.resize_image(im, current_scale)
-        current_height, current_width, _ = im_resized.shape
-
-        if self.slide_window:
-            # sliding window
-            temp_rectangles = list()
-            rectangles = list()     # list of rectangles [x11, y11, x12, y12, confidence] (corresponding to original image)
-            all_cropped_ims = list()
-            while min(current_height, current_width) > net_size:
-                current_y_list = range(0, current_height - net_size + 1, self.stride) if (current_height - net_size) % self.stride == 0 \
-                else range(0, current_height - net_size + 1, self.stride) + [current_height - net_size]
-                current_x_list = range(0, current_width - net_size + 1, self.stride) if (current_width - net_size) % self.stride == 0 \
-                else range(0, current_width - net_size + 1, self.stride) + [current_width - net_size]
-
-                for current_y in current_y_list:
-                    for current_x in current_x_list:
-                        cropped_im = im_resized[current_y:current_y + net_size, current_x:current_x + net_size, :]
-
-                        current_rectangle = [int(w * float(current_x) / current_width), int(h * float(current_y) / current_height),
-                                             int(w * float(current_x) / current_width) + int(w * float(net_size) / current_width),
-                                             int(h * float(current_y) / current_height) + int(w * float(net_size) / current_width),
-                                                 0.0]
-                        temp_rectangles.append(current_rectangle)
-                        all_cropped_ims.append(cropped_im)
-
-                current_scale *= self.scale_factor
-                im_resized = self.resize_image(im, current_scale)
-                current_height, current_width, _ = im_resized.shape
-
-            '''
-            # helper for setting PNet batch size
-            num_boxes = len(all_cropped_ims)
-            batch_size = self.pnet_detector.batch_size
-            ratio = float(num_boxes) / batch_size
-            if ratio > 3 or ratio < 0.3:
-                print "You may need to reset PNet batch size if this info appears frequently, \
-face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
-            '''
-            all_cropped_ims = np.vstack(all_cropped_ims)
-            cls_scores, reg = self.pnet_detector.predict(all_cropped_ims)
-
-            cls_scores = cls_scores[:, 1].flatten()
-            keep_inds = np.where(cls_scores > self.thresh[0])[0]
-
-            if len(keep_inds) > 0:
-                boxes = np.vstack(temp_rectangles[ind] for ind in keep_inds)
-                boxes[:, 4] = cls_scores[keep_inds]
-                reg = reg[keep_inds].reshape(-1, 4)
-            else:
-                return None, None
-
-            keep = py_nms(boxes, 0.7, 'Union')
+        height, width, channel = image.shape
+        scales, scales_wh = calc_scale(height, width, self.min_face_size)
+        self.p_end_points = []
+        # FCN in PNet
+        all_boxes = list()
+        for current_scale, tuple_wh in zip(scales, scales_wh):
+            im_resized = resize_image_by_wh(image, tuple_wh)
+            cls_map, reg, end_points = self.pnet_detector.predict(im_resized)
+            self.p_end_points.append(end_points)
+            boxes = generate_bbox(cls_map[0, :, :, 1], reg, current_scale, self.thresh[0])
+            if boxes.size == 0:
+                continue
+            keep = py_nms(boxes[:, :5], 0.5, 'Union')
             boxes = boxes[keep]
+            all_boxes.append(boxes)
 
-            boxes_c = self.calibrate_box(boxes, reg[keep])
-        else:
-            # fcn
-            all_boxes = list()
-            while min(current_height, current_width) > net_size:
-                cls_map, reg = self.pnet_detector.predict(im_resized)
-                boxes = self.generate_bbox(cls_map[0, :, :, 1], reg, current_scale, self.thresh[0])
+        if len(all_boxes) == 0:
+            return None, None
 
-                current_scale *= self.scale_factor
-                im_resized = self.resize_image(im, current_scale)
-                current_height, current_width, _ = im_resized.shape
+        all_boxes = np.vstack(all_boxes)
 
-                if boxes.size == 0:
-                    continue
-                keep = py_nms(boxes[:, :5], 0.5, 'Union')
-                boxes = boxes[keep]
-                all_boxes.append(boxes)
+        # merge the detection from first stage
+        keep = py_nms(all_boxes[:, 0:5], 0.7, 'Union')
+        all_boxes = all_boxes[keep]
+        boxes = all_boxes[:, :5]
 
-            if len(all_boxes) == 0:
-                return None, None
+        bbw = all_boxes[:, 2] - all_boxes[:, 0] + 1
+        bbh = all_boxes[:, 3] - all_boxes[:, 1] + 1
 
-            all_boxes = np.vstack(all_boxes)
-
-            # merge the detection from first stage
-            keep = py_nms(all_boxes[:, 0:5], 0.7, 'Union')
-            all_boxes = all_boxes[keep]
-            boxes = all_boxes[:, :5]
-
-            bbw = all_boxes[:, 2] - all_boxes[:, 0] + 1
-            bbh = all_boxes[:, 3] - all_boxes[:, 1] + 1
-
-            # refine the boxes
-            boxes_c = np.vstack([all_boxes[:, 0] + all_boxes[:, 5] * bbw,
-                                 all_boxes[:, 1] + all_boxes[:, 6] * bbh,
-                                 all_boxes[:, 2] + all_boxes[:, 7] * bbw,
-                                 all_boxes[:, 3] + all_boxes[:, 8] * bbh,
-                                 all_boxes[:, 4]])
-            boxes_c = boxes_c.T
+        # refine the boxes
+        boxes_c = np.vstack([all_boxes[:, 0] + all_boxes[:, 5] * bbw,
+                             all_boxes[:, 1] + all_boxes[:, 6] * bbh,
+                             all_boxes[:, 2] + all_boxes[:, 7] * bbw,
+                             all_boxes[:, 3] + all_boxes[:, 8] * bbh,
+                             all_boxes[:, 4]])
+        boxes_c = boxes_c.T
 
         return boxes, boxes_c
 

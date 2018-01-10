@@ -29,7 +29,7 @@ flags.DEFINE_integer("image_sum", 1031327, "Sum of images in train set.")
 flags.DEFINE_integer("batch_size", 128, "Batch size in classification task.")
 flags.DEFINE_float("lr", 0.01, "Base learning rate.")
 flags.DEFINE_float("lr_decay_factor", 0.1, "learning rate decay factor.")
-LR_EPOCH = [7, 13]
+LR_EPOCH = [3, 7, 13]
 flags.DEFINE_integer("end_epoch", 16, "How many epoch training.")
 
 ########################################
@@ -68,13 +68,13 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
         #########################################
         cls_data_label = stat_tfrecords.ReadTFRecord(tfrecords, netSize, 3, 'reg_label', 4)
         # https://stackoverflow.com/questions/43028683/whats-going-on-in-tf-train-shuffle-batch-and-tf-train-batch?answertab=votes#tab-top
+        # https://stackoverflow.com/questions/34258043/getting-good-mixing-with-many-input-datafiles-in-tensorflow/34258214#34258214
         # Different batch_size and capacity and min_after_dequeue impact data selected.
         image_batch, cls_label_batch, reg_label_batch = \
             tf.train.shuffle_batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
-                                   batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16)
-        # image_batch, cls_label_batch, reg_label_batch = \
-        #     tf.train.batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
-        #                    batch_size=FLAGS.batch_size, capacity=100000, num_threads=16)
+                                   batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16,
+                                   allow_smaller_final_batch=True)
+
         #########################################
         # Get Detect train data from tfrecords. #
         #########################################
@@ -144,8 +144,8 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
 
         summary_writer = tf.summary.FileWriter(logdir, sess.graph)
         summary_op = tf.summary.merge_all()
-
-        n_step_epoch = int(FLAGS.image_sum / FLAGS.batch_size)
+        # allow_smaller_final_batch, avoid discarding data
+        n_step_epoch = int(np.ceil(FLAGS.image_sum / FLAGS.batch_size))
         for cur_epoch in range(start_epoch, end_epoch + 1):
             cls_loss_list = []
             bbox_loss_list = []

@@ -12,6 +12,8 @@ from FcnDetector import FcnDetector
 from JDAPDetect import JDAPDetector
 from Detector import Detector
 import cv2
+import math
+import glob
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '1')
 
 FLAGS = tf.flags.FLAGS
@@ -38,27 +40,53 @@ def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet
         ONet = Detector(O_Net, 48, batch_size[2], model_path[2])
         detectors[2] = ONet
 
-    mtcnn_detector = JDAPDetector(detectors=detectors, is_ERC=True, min_face_size=min_face_size, stride=stride, threshold=thresh)
+    mtcnn_detector = JDAPDetector(detectors=detectors, is_ERC=False, min_face_size=min_face_size, stride=stride, threshold=thresh)
 
     fin = open(name_list, 'r')
     #fout = open('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/p_%d.txt' % FLAGS.ERC_thresh, 'w')
-    fout = open('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/pnet_wide.txt', 'w')
+    fout = open('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/dsasd.txt', 'w')
     lines = fin.readlines()
+    # glob
+    #lines = glob.glob('/home/dafu/Pictures/test/12_*.jpg')
     scale = -0.3
     count = 0
+    max_value = 0
+    min_value = 100
+    min_abs_value = 100
+    eps = math.pow(2, -10)
     for line in lines:
         count += 1
         # if count % 19 != 0:
         #     continue
         if count % 300 == 0:
             print("Detect %d images." % count)
+            print(max_value, min_value, min_abs_value)
         related_name = line.strip().split()[0]
         if '.jpg' not in related_name:
             related_name += '.jpg'
         image_name = os.path.join(dataset_path, related_name)
+        # glob
+        #image_name = line
+        image_name = '/home/dafu/Pictures/test/test.jpg'
         image = cv2.imread(image_name)
         all_boxes = mtcnn_detector.detect(image)
+        # Analysis end_points
+        end_points = mtcnn_detector.p_end_points
+        image_pyramid_num = len(end_points)
+        for pyramid_id in range(image_pyramid_num):
+            #print('pyramid_id : %d' % pyramid_id)
+            for layer_name, end_points_value in end_points[pyramid_id].items():
+                if max_value < np.max(end_points_value):
+                    max_value = np.max(end_points_value)
+                if min_value > np.min(end_points_value):
+                    min_value = np.min(end_points_value)
+                min_temp = np.min(np.abs(end_points_value))
+                if min_temp > eps and min_abs_value > min_temp:
+                    min_abs_value = min_temp
+                #print('%s min %.4f max %.4f' % (layer_name, np.min(end_points_value), np.max(end_points_value)))
+
         box_num = all_boxes.shape[0]
+
         write_str = line + str(box_num) + '\n'
         for i in range(box_num):
             bbox = all_boxes[i, :4]
@@ -79,7 +107,7 @@ def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet
         if vis:
             cv2.imshow("a", image)
             cv2.waitKey(0)
-
+    print(max_value, min_value, min_abs_value)
 
 def test_aux_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet", thresh=[0.6, 0.6, 0.7],
              min_face_size=24, stride=2, shuffle=False, vis=False):
@@ -146,14 +174,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--name_list', dest='name_list', help='output data folder',
-                        default='/home/dafu/data/FDDB/RYFdefined/FDDBNameList.txt',
+                        #default='/home/dafu/data/FDDB/RYFdefined/FDDBNameList.txt',
                         #default='/home/dafu/data/WIDER_FACE/wider_face_split/wider_name_list.txt',
                         #default='/home/dafu/data/AFLW/data/aflw_rect_pose.txt',
+                        default='/home/dafu/data/300W-LP/300WP_pose.txt',
                         type=str)
     parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
-                        default='/home/dafu/data/FDDB',
+                        #default='/home/dafu/data/FDDB',
                         #default='/home/dafu/data/WIDER_FACE/WIDER_train/images',
                         #default='/home/dafu/data/AFLW/data',
+                        default='/home/dafu/data/300W-LP',
                         type=str)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
                         default='pnet', type=str)
@@ -165,14 +195,16 @@ def parse_args():
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_retrain/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_more_c/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM/pnet',
-                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7/pnet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug_MC/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_aug_LB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7_LB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7_wo_pooling/pnet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_order_SB/pnet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_shuffle_SB/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_order_SB/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_shuffle_SB/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_shuffle_SB_test/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_shuffle_LB/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_FL/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test_FL_relu/pnet',
@@ -189,7 +221,7 @@ def parse_args():
                                 '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_landmark_pose_OHEM_0.7/onet'
                                 ], type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
-                        default=[6, 16, 16], type=int)
+                        default=[16, 16, 16], type=int)
     parser.add_argument('--batch_size', dest='batch_size', help='list of batch size used in prediction', nargs="+",
                         default=[2048, 256, 16], type=int)
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
