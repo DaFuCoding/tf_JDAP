@@ -2,9 +2,7 @@ import cv2
 import time
 import numpy as np
 from configs.config import config
-from tools.utils import py_nms, generate_bbox, resize_image_by_wh, calc_scale
-import matplotlib.pyplot as plt
-import random
+from tools.utils import *
 
 
 class JDAPDetector(object):
@@ -14,8 +12,7 @@ class JDAPDetector(object):
                  min_face_size=24,
                  stride=2,
                  threshold=[0.6, 0.7, 0.7],
-                 scale_factor=0.709,
-                 slide_window=False):
+                 scale_factor=0.709):
 
         self.pnet_detector = detectors[0]
         self.rnet_detector = detectors[1]
@@ -25,108 +22,8 @@ class JDAPDetector(object):
         self.stride = stride
         self.thresh = threshold
         self.scale_factor = scale_factor
-        self.slide_window = slide_window
         self.p_end_points = []
         self.r_end_points = []
-
-    def convert_to_square(self, bbox):
-        """
-            convert bbox to square
-        Parameters:
-        ----------
-            bbox: numpy array , shape n x 5
-                input bbox
-        Returns:
-        -------
-            square bbox
-        """
-        square_bbox = bbox.copy()
-
-        h = bbox[:, 3] - bbox[:, 1] + 1
-        w = bbox[:, 2] - bbox[:, 0] + 1
-        max_side = np.maximum(h,w)
-        square_bbox[:, 0] = bbox[:, 0] + w*0.5 - max_side*0.5
-        square_bbox[:, 1] = bbox[:, 1] + h*0.5 - max_side*0.5
-        square_bbox[:, 2] = square_bbox[:, 0] + max_side - 1
-        square_bbox[:, 3] = square_bbox[:, 1] + max_side - 1
-        return square_bbox
-
-    def calibrate_box(self, bbox, reg):
-        """
-            calibrate bboxes
-        Parameters:
-        ----------
-            bbox: numpy array, shape n x 5
-                input bboxes
-            reg:  numpy array, shape n x 4
-                bboxes adjustment
-        Returns:
-        -------
-            bboxes after refinement
-        """
-
-        bbox_c = bbox.copy()
-        w = bbox[:, 2] - bbox[:, 0] + 1
-        w = np.expand_dims(w, 1)
-        h = bbox[:, 3] - bbox[:, 1] + 1
-        h = np.expand_dims(h, 1)
-        reg_m = np.hstack([w, h, w, h])
-        aug = reg_m * reg
-        bbox_c[:, 0:4] = bbox_c[:, 0:4] + aug
-        return bbox_c
-
-    def pad(self, bboxes, w, h):
-        """
-            pad the the bboxes, alse restrict the size of it
-        Parameters:
-        ----------
-            bboxes: numpy array, n x 5
-                input bboxes
-            w: float number
-                width of the input image
-            h: float number
-                height of the input image
-        Returns :
-        ------
-            dy, dx : numpy array, n x 1
-                start point of the bbox in target image
-            edy, edx : numpy array, n x 1
-                end point of the bbox in target image
-            y, x : numpy array, n x 1
-                start point of the bbox in original image
-            ex, ex : numpy array, n x 1
-                end point of the bbox in original image
-            tmph, tmpw: numpy array, n x 1
-                height and width of the bbox
-        """
-        tmpw, tmph = bboxes[:, 2] - bboxes[:, 0] + 1,  bboxes[:, 3] - bboxes[:, 1] + 1
-        num_box = bboxes.shape[0]
-
-        dx , dy= np.zeros((num_box, )), np.zeros((num_box, ))
-        edx, edy  = tmpw.copy()-1, tmph.copy()-1
-
-        x, y, ex, ey = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2], bboxes[:, 3]
-
-        tmp_index = np.where(ex > w-1)
-        edx[tmp_index] = tmpw[tmp_index] + w - 2 - ex[tmp_index]
-        ex[tmp_index] = w - 1
-
-        tmp_index = np.where(ey > h-1)
-        edy[tmp_index] = tmph[tmp_index] + h - 2 - ey[tmp_index]
-        ey[tmp_index] = h - 1
-
-        tmp_index = np.where(x < 0)
-        dx[tmp_index] = 0 - x[tmp_index]
-        x[tmp_index] = 0
-
-        tmp_index = np.where(y < 0)
-        dy[tmp_index] = 0 - y[tmp_index]
-        y[tmp_index] = 0
-
-        return_list = [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph]
-        return_list = [item.astype(np.int32) for item in return_list]
-
-        return return_list
 
     def detect_pnet(self, image):
         """Get face candidates through pnet
@@ -155,13 +52,16 @@ class JDAPDetector(object):
         all_boxes = list()
         for current_scale, tuple_wh in zip(scales, scales_wh):
             im_resized = resize_image_by_wh(image, tuple_wh)
-            cls_map, reg, end_points = self.pnet_detector.predict(im_resized)
+            cls_map, bbox_reg, end_points = self.pnet_detector.predict(im_resized)
             self.p_end_points.append(end_points)
-            boxes = generate_bbox(cls_map[0, :, :, 1], reg, current_scale, self.thresh[0])
+            boxes = generate_bbox(cls_map[0, :, :, 1], bbox_reg[0], current_scale, self.thresh[0])
+            # Numpy slice without security check
             if boxes.size == 0:
                 continue
             keep = py_nms(boxes[:, :5], 0.5, 'Union')
-            boxes = boxes[keep]
+            boxes = boxes[keep]  # if keep is [], boxes is also []
+            if boxes.size == 0:
+                continue
             all_boxes.append(boxes)
 
         if len(all_boxes) == 0:
@@ -205,10 +105,10 @@ class JDAPDetector(object):
             boxes after calibration
         """
         h, w, c = im.shape
-        dets = self.convert_to_square(dets)
+        dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
 
-        [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph] = self.pad(dets, w, h)
+        [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph] = pad(dets, w, h)
         num_boxes = dets.shape[0]
 
         '''
@@ -225,10 +125,12 @@ face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
             tmp = np.zeros((tmph[i], tmpw[i], 3), dtype=np.uint8)
             tmp[dy[i]:edy[i]+1, dx[i]:edx[i]+1, :] = im[y[i]:ey[i]+1, x[i]:ex[i]+1, :]
             cropped_ims[i, :, :, :] = (cv2.resize(tmp, (24, 24)) - 127.5) * 0.0078125
+
         if self.is_ERC:
             cls_scores, reg, reserve_mask = self.rnet_detector.predict(cropped_ims)
         else:
-            cls_scores, reg = self.rnet_detector.predict(cropped_ims)
+            cls_scores, reg, end_points = self.rnet_detector.predict(cropped_ims)
+        self.r_end_points = end_points
         keep_inds = np.where(cls_scores[:, 1] > self.thresh[1])
 
         if len(keep_inds) > 0:
@@ -244,7 +146,7 @@ face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
         keep = py_nms(boxes, 0.7)
         boxes = boxes[keep]
 
-        boxes_c = self.calibrate_box(boxes, reg[keep])
+        boxes_c = calibrate_box(boxes, reg[keep])
 
         return boxes, boxes_c
 
@@ -266,10 +168,10 @@ face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
             boxes after calibration
         """
         h, w, c = im.shape
-        dets = self.convert_to_square(dets)
+        dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
 
-        [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph] = self.pad(dets, w, h)
+        [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph] = pad(dets, w, h)
         num_boxes = dets.shape[0]
 
         '''
@@ -305,7 +207,7 @@ face candidates:%d, current batch_size:%d"%(num_boxes, batch_size)
                 return None, None, None, None
             return None, None
 
-        boxes_c = self.calibrate_box(boxes, reg)
+        boxes_c = calibrate_box(boxes, reg)
 
         keep = py_nms(boxes_c, 0.7, "Minimum")
         boxes_c = boxes_c[keep]

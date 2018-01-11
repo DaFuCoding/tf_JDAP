@@ -12,8 +12,6 @@ sys.path.insert(0, caffe_root + 'python')
 import caffe
 import caffe.proto.caffe_pb2 as caffe_pb2
 
-import tensorflow as tf
-import tensorflow.contrib.slim as slim
 from tensorflow.python import pywrap_tensorflow
 import numpy as np
 import os
@@ -28,7 +26,7 @@ class TensorflowParser(object):
     Network Op includes convolution and prelu and FC
     """
 
-    def __init__(self, stage, tf_model_prefix, caffe_model_prefix):
+    def __init__(self, stage, tf_model_prefix, caffe_model_prefix, attribute_name=''):
 
         self._tf_model_prefix = tf_model_prefix
         self._caffe_model_prefix = caffe_model_prefix
@@ -37,6 +35,7 @@ class TensorflowParser(object):
         self._ckpt_data = self.load_weights()
         # Keep valid weights in different stage
         self._stage = stage
+        self.attribute_name = attribute_name
         self.data = list()
         self.extract_valiad_weights()
 
@@ -105,14 +104,15 @@ class TensorflowParser(object):
         conv_num = 3
         conv_branch = []
         fc_num = 0
-        attribute_name = []
         network_name = 'JDAP_%dNet' % self._stage
+        if self.attribute_name is not '':
+            network_name += '_%s' % self.attribute_name
         prelu_name = 'prelu/alpha'
         conv_name = 'conv'
         fc_name = 'fc'
         conv_w_name = 'weights'
         conv_b_name = 'biases'
-
+        attribute_name_vec = []
         if self._stage == 12:
             # express conv4_1 and conv4_2
             conv_branch = [[4, 2]]
@@ -122,7 +122,10 @@ class TensorflowParser(object):
         elif self._stage == 48:
             conv_num = 4
             fc_num = 3
-            #attribute_name = ['landmark', 'pose_reg']
+            if "Landmark" in self.attribute_name:
+                attribute_name_vec.append('landmark')
+            if 'Pose' in self.attribute_name:
+                attribute_name_vec.append('pose_reg')
         else:
             print("Unknown stage.")
             return None
@@ -149,6 +152,11 @@ class TensorflowParser(object):
             if id == 0:
                 param_name.append(os.path.join(fc_pre, prelu_name))
 
+        # Parser Attribute
+        for att_name in attribute_name_vec:
+            att_pre = os.path.join(network_name, att_name)
+            join_param(att_pre)
+
         self.param_name = param_name
 
     def extract_valiad_weights(self):
@@ -166,13 +174,14 @@ class CaffeParser(object):
     # for layer in layers:
     #     print layer
     def __init__(self, net_name, model_name, tf_data, new_model_dir):
-        #caffe.set_mode_cpu()
+        caffe.set_mode_cpu()
         self._net = caffe.Net(net_name, model_name, caffe.TEST)
         self.param_names = self._net.params.keys()
         self.tf_data = tf_data
         self.new_model_dir = new_model_dir
+        self.caffe_format = 'NCHW'
 
-    def tf2caffe(self):
+    def tf2caffe(self, stage, tf_format='NHWC'):
         param_cnt = 0
         for caffe_name in self.param_names:
             param = self._net.params[caffe_name]
@@ -181,9 +190,21 @@ class CaffeParser(object):
                 print(param[i].data.shape)
                 caffe_layer_data = param[i].data
                 tf_layer_data = self.tf_data[param_cnt][1]
+                # Notation: Default input format Caffe(NCHW) but TF(NHWC) !!!
                 # Caffe(Out In Kh Kw) TF(Kh Kw In Out) Reshape Caffe format
                 if len(tf_layer_data.shape) == 4:
                     tf_layer_data = np.transpose(tf_layer_data, (3, 2, 0, 1))
+                elif len(tf_layer_data.shape) == 2:
+                    # TODO: Make this nice
+                    # Convert FC
+                    if caffe_name == 'conv4' and stage == 24:
+                        index = np.transpose(np.reshape(np.array(range(3 * 3 * 64)), [3, 3, 64]), [2, 0, 1]).flatten()
+                        tf_layer_data = tf_layer_data[index]
+
+                    if caffe_name == 'conv5' and stage == 48:
+                        index = np.transpose(np.reshape(np.array(range(3 * 3 * 128)), [3, 3, 128]), [2, 0, 1]).flatten()
+                        tf_layer_data = tf_layer_data[index]
+                    tf_layer_data = np.transpose(tf_layer_data)
                 print(tf_layer_data.shape)
                 assert (tf_layer_data.shape == caffe_layer_data.shape)
                 param_cnt += 1
@@ -192,14 +213,14 @@ class CaffeParser(object):
         self._net.save(self.new_model_dir)
 
 
-tf_model_name = '/home/dafu/workspace/DLFramework/MMdnn/models/pnet-16'
-caffe_model_name = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/MTCNN_Official/det1.caffemodel'
-caffe_net_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/MTCNN_Official/det1.prototxt'
-new_model_dir = './tf2caffe_rnet.caffemodel'
-stage = 12
-TFConverter = TensorflowParser(stage, tf_model_name, caffe_model_name)
+tf_model_name = '/home/dafu/workspace/DLFramework/MMdnn/models/onet-16'
+caffe_model_name = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/MTCNN_Official/det3.caffemodel'
+caffe_net_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/models/MTCNN_Official/det3_landmark_pose.prototxt'
+new_model_dir = './tf2caffe_onet_landmark_pose.caffemodel'
+stage = 48
+TFConverter = TensorflowParser(stage, tf_model_name, caffe_model_name, 'Landmark_Pose')
 tf_data = TFConverter.data
 
-CaffeConverter = CaffeParser(caffe_net_file, caffe_model_name, tf_data)
-CaffeConverter.tf2caffe()
+CaffeConverter = CaffeParser(caffe_net_file, caffe_model_name, tf_data, new_model_dir)
+CaffeConverter.tf2caffe(stage)
 

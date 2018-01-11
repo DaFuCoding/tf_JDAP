@@ -7,10 +7,9 @@ class Detector(object):
         self._aux_idx = aux_idx
         graph = tf.Graph()
         with graph.as_default():
-            #self.image_op = tf.placeholder(tf.float32, shape=[batch_size, data_size, data_size, 3], name='input_image')
             self.image_op = tf.placeholder(tf.float32, shape=[None, data_size, data_size, 3], name='input_image')
             if self._aux_idx == 0:
-                self.cls_prob, self.bbox_pred = net_factory(self.image_op, is_training=False)
+                self.cls_prob, self.bbox_pred, self.end_points = net_factory(self.image_op, is_training=False)
             # Only face landmark aux
             if self._aux_idx == 1:
                 self.cls_prob, self.bbox_pred, self.land_pred = net_factory(self.image_op, is_training=False)
@@ -19,7 +18,8 @@ class Detector(object):
                 self.cls_prob, self.bbox_pred, self.pose_pred = net_factory(self.image_op, is_training=False)
             # face landmark and head pose aux together
             elif self._aux_idx == 3:
-                self.cls_prob, self.bbox_pred, self.land_pred, self.pose_pred = net_factory(self.image_op, is_training=False)
+                self.cls_prob, self.bbox_pred, self.land_pred, self.pose_pred, self.end_points\
+                    = net_factory(self.image_op, is_training=False)
             # Using early reject classifier
             elif self._aux_idx == 4:
                 self.cls_prob, self.bbox_pred, self.DR1_index, self.DR2_index = net_factory(self.image_op, is_training=False)
@@ -68,14 +68,16 @@ class Detector(object):
                     data = data[keep_inds]
                     real_size = m
                 if self._aux_idx == 0:
-                    cls_prob, bbox_pred = self.sess.run([self.cls_prob, self.bbox_pred], feed_dict={self.image_op: data})
+                    cls_prob, bbox_pred, end_points = self.sess.run([self.cls_prob, self.bbox_pred, self.end_points],
+                                                                    feed_dict={self.image_op: data})
                 elif self._aux_idx == 1:
                     pass
                 elif self._aux_idx == 2:
                     pass
                 elif self._aux_idx == 3:
-                    cls_prob, bbox_pred, land_pred, pose_pred = \
-                        self.sess.run([self.cls_prob, self.bbox_pred, self.land_pred, self.pose_pred], feed_dict={self.image_op: data})
+                    cls_prob, bbox_pred, land_pred, pose_pred, end_points = \
+                        self.sess.run([self.cls_prob, self.bbox_pred, self.land_pred, self.pose_pred, self.end_points],
+                                      feed_dict={self.image_op: data})
                     land_pred_list.append(land_pred[:real_size])
                     pose_pred_list.append(pose_pred[:real_size])
                 # elif self._aux_idx == 4:
@@ -102,7 +104,7 @@ class Detector(object):
             bbox_result = np.concatenate(bbox_pred_list, axis=0)
 
         if self._aux_idx == 0:
-            return cls_result, bbox_result
+            return cls_result, bbox_result, end_points
         elif self._aux_idx == 1:
             return []
         elif self._aux_idx == 2:
@@ -110,7 +112,7 @@ class Detector(object):
         elif self._aux_idx == 3:
             land_result = np.concatenate(land_pred_list, axis=0)
             pose_result = np.concatenate(pose_pred_list, axis=0)
-            return cls_result, bbox_result, land_result, pose_result
+            return cls_result, bbox_result, land_result, pose_result, end_points
         # elif self._aux_idx == 4:
         #     # DR1_index_list = np.concatenate(DR1_index_list, axis=0)
         #     # DR2_index_list = np.concatenate(DR2_index_list, axis=0)

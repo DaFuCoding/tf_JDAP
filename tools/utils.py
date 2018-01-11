@@ -1,3 +1,5 @@
+#__all__ = ['py_nms', 'generate_bbox', 'resize_image_by_wh', 'calc_scale']
+
 import cv2
 import numpy as np
 import numpy.random as npr
@@ -55,18 +57,19 @@ def convert_to_square(bbox):
     square_bbox[:, 3] = square_bbox[:, 1] + max_side - 1
     return square_bbox
 
-
 def py_nms(dets, thresh, mode="Union"):
+    """ greedily select boxes with high confidence
+    Keep boxes overlap <= thresh rule out overlap > thresh
+    Args:
+        dets: Must be 2D-array. Format [[x1, y1, x2, y2 score],[...]]
+        thresh: retain overlap <= thresh
+        mode: Union and Minimum
+
+    Returns:
+        indexes to keep
     """
-    greedily select boxes with high confidence
-    keep boxes overlap <= thresh
-    rule out overlap > thresh
-    :param dets: [[x1, y1, x2, y2 score]]
-    :param thresh: retain overlap <= thresh
-    :return: indexes to keep
-    """
-    if len(dets) == 0:
-        return []
+    if len(dets.shape) != 2:
+        return np.array([])
     x1 = dets[:, 0]
     y1 = dets[:, 1]
     x2 = dets[:, 2]
@@ -76,7 +79,7 @@ def py_nms(dets, thresh, mode="Union"):
     areas = (x2 - x1 + 1) * (y2 - y1 + 1)
     order = scores.argsort()[::-1]
 
-    keep = []
+    keep = list()
     while order.size > 0:
         i = order[0]
         keep.append(i)
@@ -231,17 +234,43 @@ def generate_bbox(cls_map, reg, scale, threshold):
     if t_index[0].size == 0:
         return np.array([])
     # bounding box regressor
-    dx1, dy1, dx2, dy2 = [reg[0, t_index[0], t_index[1], i] for i in range(4)]
+    #dx1, dy1, dx2, dy2 = [reg[0, t_index[0], t_index[1], i] for i in range(4)]
+    dx1, dy1, dx2, dy2 = [reg[t_index[0], t_index[1], i] for i in range(4)]
     reg = np.array([dx1, dy1, dx2, dy2])
     score = cls_map[t_index[0], t_index[1]]
     boundingbox = np.vstack([np.round((stride*t_index[1])/scale),
                              np.round((stride*t_index[0])/scale),
-                             np.round((stride*t_index[1]+cellsize)/scale),
-                             np.round((stride*t_index[0]+cellsize)/scale),
+                             np.round((stride*t_index[1]+cellsize)/scale - 1),
+                             np.round((stride*t_index[0]+cellsize)/scale - 1),
                              score.T,
                              reg])
 
     return boundingbox.T
+
+
+def calibrate_box(bbox, reg):
+    """
+        calibrate bboxes
+    Parameters:
+    ----------
+        bbox: numpy array, shape n x 5
+            input bboxes
+        reg:  numpy array, shape n x 4
+            bboxes adjustment
+    Returns:
+    -------
+        bboxes after refinement
+    """
+
+    bbox_c = bbox.copy()
+    w = bbox[:, 2] - bbox[:, 0] + 1
+    w = np.expand_dims(w, 1)
+    h = bbox[:, 3] - bbox[:, 1] + 1
+    h = np.expand_dims(h, 1)
+    reg_m = np.hstack([w, h, w, h])
+    aug = reg_m * reg
+    bbox_c[:, 0:4] = bbox_c[:, 0:4] + aug
+    return bbox_c
 
 
 class DataPretreat(object):

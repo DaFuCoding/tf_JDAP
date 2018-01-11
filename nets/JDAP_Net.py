@@ -249,7 +249,7 @@ def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
             return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
         else:
             cls_prob = tf.nn.softmax(logits=cls_prob)
-            return cls_prob, bbox_pred
+            return cls_prob, bbox_pred, end_points
 
 
 def JDAP_24Net_ERC(inputs, label=None, bbox_target=None, is_training=True):
@@ -518,4 +518,4 @@ def JDAP_48Net_Lanmark_Pose(inputs, label=None, bbox_target=None, landmark_targe
                 return cls_prob, bbox_pred, landmark_pred, pose_reg_pred, cls_loss, bbox_loss, landmark_loss, pose_reg_loss, end_points
             else:
                 cls_prob = tf.nn.softmax(logits=cls_prob)
-                return cls_prob, bbox_pred, landmark_pred, pose_reg_pred
+                return cls_prob, bbox_pred, landmark_pred, pose_reg_pred, end_points

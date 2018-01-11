@@ -14,14 +14,14 @@ from Detector import Detector
 import cv2
 import math
 import glob
-os.environ.setdefault('CUDA_VISIBLE_DEVICES', '1')
+os.environ.setdefault('CUDA_VISIBLE_DEVICES', '3')
 
 FLAGS = tf.flags.FLAGS
 FLAGS.ERC_thresh = 0.1
 
 
 def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet", thresh=[0.6, 0.6, 0.7],
-             min_face_size=24, stride=2, shuffle=False, vis=False):
+             min_face_size=24, stride=2, vis=False):
 
     detectors = [None, None, None]
     model_path = ['%s-%s' % (x, y) for x, y in zip(prefix, epoch)]
@@ -31,8 +31,8 @@ def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet
 
     # load rnet model
     if test_mode in ["rnet", "onet"]:
-        RNet = Detector(R_Net_ERC, 24, batch_size[1], model_path[1], aux_idx=4)
-        #RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
+        #RNet = Detector(R_Net_ERC, 24, batch_size[1], model_path[1], aux_idx=4)
+        RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
         detectors[1] = RNet
 
     # load onet model
@@ -46,8 +46,7 @@ def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet
     #fout = open('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/p_%d.txt' % FLAGS.ERC_thresh, 'w')
     fout = open('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/dsasd.txt', 'w')
     lines = fin.readlines()
-    # glob
-    #lines = glob.glob('/home/dafu/Pictures/test/12_*.jpg')
+
     scale = -0.3
     count = 0
     max_value = 0
@@ -65,8 +64,6 @@ def test_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet
         if '.jpg' not in related_name:
             related_name += '.jpg'
         image_name = os.path.join(dataset_path, related_name)
-        # glob
-        #image_name = line
         image_name = '/home/dafu/Pictures/test/test.jpg'
         image = cv2.imread(image_name)
         all_boxes = mtcnn_detector.detect(image)
@@ -170,6 +167,29 @@ def test_aux_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="
             cv2.waitKey(0)
 
 
+def test_single_net(image_list, prefix, epoch, stage, attribute=False):
+    model_path = '%s-%s' % (prefix, epoch)
+    # load pnet model
+    if stage == 12:
+        detector = FcnDetector(P_Net, model_path)
+    elif stage == 24:
+        detector = Detector(R_Net, 24, 1, model_path)
+    elif stage == 48:
+        if attribute:
+            detector = Detector(O_AUX_Net, 48, 1, model_path, aux_idx=3)
+        else:
+            detector = Detector(O_Net, 48, 1, model_path)
+    for image_name in image_list:
+        image = cv2.imread(image_name)
+        norm_img = (image.copy() - 127.5) * 0.0078125  # C H W
+        norm_img = norm_img[np.newaxis, :]
+        fms = detector.predict(norm_img)
+        # Print end_points keys
+        print(fms[-1].keys())
+        t = fms[-1]
+        print(t)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -186,7 +206,7 @@ def parse_args():
                         default='/home/dafu/data/300W-LP',
                         type=str)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
-                        default='pnet', type=str)
+                        default='rnet', type=str)
     parser.add_argument('--prefix', dest='prefix', help='prefix of model name', nargs="+",
                         default=[
                                 # PNet
@@ -209,9 +229,9 @@ def parse_args():
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test/pnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_test_FL_relu/pnet',
                                 # RNet
-                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7/rnet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_ERC_keep_all_pos/rnet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_ERC/rnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_ERC/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_ERC_pos_neg/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_ERC_LB/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7_head/rnet',
@@ -225,7 +245,7 @@ def parse_args():
     parser.add_argument('--batch_size', dest='batch_size', help='list of batch size used in prediction', nargs="+",
                         default=[2048, 256, 16], type=int)
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
-                        default=[0.6, 0.1, 0.1], type=float)
+                        default=[0.6, 0.5, 0.1], type=float)
     parser.add_argument('--min_face', dest='min_face', help='minimum face size for detection',
                         default=24, type=int)
     parser.add_argument('--stride', dest='stride', help='stride of sliding window',
@@ -244,7 +264,11 @@ if __name__ == '__main__':
     print(args)
     test_net(args.name_list, args.dataset_path, args.prefix,
              args.epoch, args.batch_size, args.test_mode,
-             args.thresh, args.min_face, args.stride, args.shuffle, args.vis)
+             args.thresh, args.min_face, args.stride, args.vis)
+    stage = 48
+    img_list = glob.glob('/home/dafu/Pictures/test/%d_*.jpg' % stage)
+    test_single_net(img_list, '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_landmark_pose_OHEM_0.7/onet',
+                    16, stage, True)
 
     # test_aux_net(args.name_list, args.dataset_path, args.prefix,
     #              args.epoch, args.batch_size, args.test_mode,
