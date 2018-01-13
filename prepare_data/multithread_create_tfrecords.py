@@ -47,6 +47,7 @@ flags.DEFINE_boolean("is_shuffle", True, "Shuffle the records before saving them
 
 FLAGS = flags.FLAGS
 
+
 class TFRecord(object):
     """A concrete class for fast make TFRecord by using multi-thread
 

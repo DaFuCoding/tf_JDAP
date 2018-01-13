@@ -9,9 +9,9 @@ from operator import itemgetter, attrgetter
 from configs.config import config
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', str(config.gpu_id))
 from nets.JDAP_Net import JDAP_12Net as P_Net, JDAP_24Net as R_Net
-from demo.FcnDetector import FcnDetector
-from demo.JDAPDetect import JDAPDetector
-from demo.Detector import Detector
+from demo.fcn_detector import FcnDetector
+from demo.jdap_detect import JDAPDetector
+from demo.detector import Detector
 from configs.config import config
 from tools.utils import *
 

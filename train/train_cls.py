@@ -25,11 +25,12 @@ flags.DEFINE_integer("tfrecords_num", 4, "Sum of tfrecords.")
 flags.DEFINE_integer("image_size", 12, "Netwrok input")
 flags.DEFINE_integer("frequent", 100, "Show train result in frequent.")
 flags.DEFINE_integer("image_sum", 1031327, "Sum of images in train set.")
+flags.DEFINE_integer("val_image_sum", 271973, "Sum of images in val set.")
 # Hyper parameter
 flags.DEFINE_integer("batch_size", 128, "Batch size in classification task.")
 flags.DEFINE_float("lr", 0.01, "Base learning rate.")
 flags.DEFINE_float("lr_decay_factor", 0.1, "learning rate decay factor.")
-LR_EPOCH = [3, 7, 13]
+LR_EPOCH = [7, 13]
 flags.DEFINE_integer("end_epoch", 16, "How many epoch training.")
 
 ########################################
@@ -59,14 +60,28 @@ FLAGS = flags.FLAGS
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', FLAGS.gpu_id)
 
 
-def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, val_tfrecords=None, frequent=500):
+def eval_net(net_factory, val_tfrecords, net_size):
+    # Get val data from tfrecords.
+    val_cls_data_label = stat_tfrecords.ReadTFRecord(val_tfrecords, net_size, 3)
+    val_image_batch, val_cls_label_batch, val_reg_label_batch = \
+        tf.train.batch([val_cls_data_label['image'], val_cls_data_label['cls_label'],
+                        val_cls_data_label['reg_label']], batch_size=FLAGS.batch_size, num_threads=16,
+                       allow_smaller_final_batch=True)
+    val_cls_prob, val_bbox_pred, _ = net_factory(val_image_batch, is_training=False, mode='VERIFY')
+    # Return eval op
+    eval_cls_op, eval_bbox_pred_op = train_core.compute_accuracy(
+        val_cls_prob, val_bbox_pred, val_cls_label_batch, val_reg_label_batch)
+    return eval_cls_op, eval_bbox_pred_op
+
+
+def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords, val_tfrecords=[], frequent=500):
     # Set logging verbosity
     tf.logging.set_verbosity(tf.logging.INFO)
     with tf.Graph().as_default():
         #########################################
         # Get Detect train data from tfrecords. #
         #########################################
-        cls_data_label = stat_tfrecords.ReadTFRecord(tfrecords, netSize, 3, 'reg_label', 4)
+        cls_data_label = stat_tfrecords.ReadTFRecord(tfrecords, net_size, 3)
         # https://stackoverflow.com/questions/43028683/whats-going-on-in-tf-train-shuffle-batch-and-tf-train-batch?answertab=votes#tab-top
         # https://stackoverflow.com/questions/34258043/getting-good-mixing-with-many-input-datafiles-in-tensorflow/34258214#34258214
         # Different batch_size and capacity and min_after_dequeue impact data selected.
@@ -74,22 +89,15 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
             tf.train.shuffle_batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
                                    batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16,
                                    allow_smaller_final_batch=True)
-
-        #########################################
-        # Get Detect train data from tfrecords. #
-        #########################################
-        # if val_tfrecords is not None:
-        #     val_cls_data_label = stat_tfrecords.ReadTFRecord(val_tfrecords, netSize, 3, 'reg_label', 4)
-        #     val_image_batch, val_cls_label_batch, val_reg_label_batch = \
-        #         tf.train.batch([val_cls_data_label['image'], val_cls_data_label['cls_label'],
-        #                         cls_data_label['reg_label']], batch_size=FLAGS.batch_size, num_threads=16)
+        if val_tfrecords is not []:
+            eval_cls_op, eval_bbox_pred_op = eval_net(net_factory, val_tfrecords, net_size)
         # Network Forward
         if FLAGS.is_ERC:
             cls_prob_op, bbox_pred_op, ERC1_loss_op, ERC2_loss_op, cls_loss_op, bbox_loss_op, end_points = \
                 net_factory(image_batch, cls_label_batch, reg_label_batch)
         else:
             cls_prob_op, bbox_pred_op, cls_loss_op, bbox_loss_op, end_points = \
-                net_factory(image_batch, cls_label_batch, reg_label_batch)
+                net_factory(image_batch, cls_label_batch, reg_label_batch, mode='TRAIN')
 
         #########################################
         # Configure the optimization procedure. #
@@ -106,7 +114,9 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
         else:
             train_op = optimizer.minimize(train_core.task_add_weight(cls_loss_op, bbox_loss_op), global_step)
 
-        # Save train summary
+        #########################################
+        # Save train/verify summary.            #
+        #########################################
         tf.summary.scalar('learning_rate', lr_op)
         tf.summary.scalar('cls_loss', cls_loss_op)
         tf.summary.scalar('bbox_reg_loss', bbox_loss_op)
@@ -123,6 +133,9 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
             for feature_name, feature_val in end_points.items():
                 tf.summary.histogram(feature_name, feature_val)
 
+        #########################################
+        # Check point or retrieve model         #
+        #########################################
         model_dir = model_prefix.rsplit('/', 1)[0]
         if not os.path.exists(model_dir):
             os.makedirs(model_dir)
@@ -140,10 +153,14 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
         else:
             sess.run(tf.global_variables_initializer())
             start_epoch = 1
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         summary_writer = tf.summary.FileWriter(logdir, sess.graph)
         summary_op = tf.summary.merge_all()
+
+        #########################################
+        # Main Training/Verify Loop             #
+        #########################################
         # allow_smaller_final_batch, avoid discarding data
         n_step_epoch = int(np.ceil(FLAGS.image_sum / FLAGS.batch_size))
         for cur_epoch in range(start_epoch, end_epoch + 1):
@@ -164,8 +181,20 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, 
             print("%s: Epoch: %d, cls loss: %4f, bbox loss: %4f " %
                   (datetime.now(), cur_epoch, np.mean(cls_loss_list), np.mean(bbox_loss_list)))
             saver.save(sess, model_prefix, cur_epoch)
+            # Computer val set accuracy, using the same as train batch_size
+            n_step_val = int(np.ceil(FLAGS.val_image_sum) / FLAGS.batch_size)
+            val_cls_prob = []
+            val_bbox_error = []
+            for step in range(n_step_val):
+                val_prob = sess.run(eval_cls_op)
+                val_bbox = sess.run(eval_bbox_pred_op)
+                val_cls_prob.append(val_prob)
+                val_bbox_error.append(val_bbox)
+            print("Epoch: %d, cls accuracy: %4f" % (cur_epoch, np.mean(val_cls_prob)))
+            print("Bbox_reg_square_mean_deviation: " + str(np.mean(val_bbox_error, axis=0)))
         coord.request_stop()
         coord.join(threads)
+
 
 def main(_):
     if FLAGS.image_size == 12:
@@ -180,16 +209,20 @@ def main(_):
 
     ''' TFRecords input'''
     cls_tfrecords = []
+    val_tfrecords = []
     tfrecords_num = FLAGS.tfrecords_num
     tfrecords_root = FLAGS.tfrecords_root
     for i in range(tfrecords_num):
         print(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
         cls_tfrecords.append(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
     print(cls_tfrecords)
+    for i in range(tfrecords_num):
+        print(tfrecords_root + "_val-%.5d-of-0000%d" % (i, tfrecords_num))
+        val_tfrecords.append(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
 
     train_net(net_factory=net_factory, model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
-              end_epoch=FLAGS.end_epoch, netSize=FLAGS.image_size, tfrecords=cls_tfrecords,
-              frequent=FLAGS.frequent)
+              end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
+              val_tfrecords=val_tfrecords, frequent=FLAGS.frequent)
 
 
 if __name__ == '__main__':

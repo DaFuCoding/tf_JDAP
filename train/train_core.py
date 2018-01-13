@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # encoding: utf-8
-import numpy as np
 import tensorflow as tf
 from configs.config import config
 
@@ -62,15 +61,10 @@ def task_add_weight(cls_loss_op, bbox_loss_op, landmark_loss_op=None, pose_loss_
     return cls_loss_op + bbox_loss_op * 1.0
 
 
-def compute_accuracy(cls_prob, label, sess):
+def compute_accuracy(cls_prob, reg_prob, gt_cls_label, gt_reg_label):
     # Only compute classify
-    keep = (label >= 0)
-    tf_cls_prob = tf.convert_to_tensor(np.array(cls_prob))
-    tf_cls_prob = tf.reshape(tf_cls_prob, [128, ])
-    pred = tf.cast(tf.floor(tf_cls_prob + 0.5), tf.int64)
-    pred_vaild = tf.cast(tf.boolean_mask(pred, keep), tf.int64)
-    label_vaild = tf.boolean_mask(label, keep)
-    print(sess.run(tf.reduce_sum(tf.cast(tf.equal(pred_vaild, label_vaild), tf.float32))))
-    print(sess.run(tf.reduce_sum(tf.cast(keep, tf.float32))))
-    return tf.reduce_sum(tf.cast(tf.equal(pred_vaild, label_vaild), tf.float32)) / tf.reduce_sum(
-        tf.cast(keep, tf.float32))
+    label = tf.cast(gt_cls_label, tf.float32)
+    pred = tf.cast(tf.floor(cls_prob[:, 1] + 0.5), tf.float32)
+    cls_accuracy = tf.reduce_mean(tf.square(pred - label))
+    bbox_square_error = tf.reduce_mean(tf.square(reg_prob - gt_reg_label), axis=0)
+    return cls_accuracy, bbox_square_error

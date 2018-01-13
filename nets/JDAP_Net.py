@@ -15,13 +15,15 @@ from configs.config import config
 import tensorflow.contrib.slim as slim
 
 FLAGS = tf.flags.FLAGS
+# TF Framework data format default is 'NHWC'
+DATA_FORMAT = 'NHWC'
 
 
 def _prelu(inputs):
     with tf.variable_scope("prelu"):
         alphas = tf.get_variable('alpha', inputs.get_shape()[-1],
                                  initializer=tf.constant_initializer(0.0),
-                                 dtype=tf.float32)
+                                 dtype=tf.float32, trainable=True)
         pos = tf.nn.relu(inputs)
         neg = alphas * (inputs - abs(inputs)) * 0.5
         return pos + neg
@@ -168,49 +170,44 @@ def JDAP_wo_pooling_12Net(inputs, cls_label=None, bbox_target=None, is_training=
                 return cls_prob, bbox_pred
 
 
-def JDAP_12Net(inputs, cls_label=None, bbox_target=None, is_training=True):
+def JDAP_12Net(inputs, cls_label=None, bbox_target=None, is_training=True, mode='TRAIN'):
     with tf.variable_scope("JDAP_12Net") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
                             activation_fn=_prelu, biases_initializer=tf.zeros_initializer(),
                             weights_regularizer=slim.l2_regularizer(0.00001), padding='valid',
-                            # data_format='NCHW',
                             outputs_collections=[end_points_collection]):
-            net = slim.conv2d(inputs, 10, kernel_size=3, scope='conv1')
-            net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1', padding='SAME')
+            with slim.arg_scope([slim.max_pool2d]):
+                net = slim.conv2d(inputs, 10, kernel_size=3, scope='conv1')
+                net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1', padding='SAME')
+                print(net.get_shape())
 
-            print(net.get_shape())
+                net = slim.conv2d(net, 16, kernel_size=3, scope='conv2')
+                net = slim.conv2d(net, 32, kernel_size=3, scope='conv3')
+                print(net.get_shape())
 
-            net = slim.conv2d(net, 16, kernel_size=3, scope='conv2')
-            net = slim.conv2d(net, 32, kernel_size=3, scope='conv3')
-            print(net.get_shape())
-
-            # net = slim.conv2d(inputs, 12, kernel_size=3, scope='conv1')
-            # net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool1')
-            #
-            # print(net.get_shape())
-            #
-            # net = slim.conv2d(net, 24, kernel_size=3, scope='conv2')
-            # net = slim.conv2d(net, 36, kernel_size=3, scope='conv3')
-            # print(net.get_shape())
-
-            conv4_1 = slim.conv2d(net, 2, kernel_size=1, scope='conv4_1', activation_fn=None)
-            bbox_pred = slim.conv2d(net, 4, kernel_size=1, scope='conv4_2', activation_fn=None)
-            end_points = slim.utils.convert_collection_to_dict(end_points_collection)
-            if is_training:
-                conv4_1 = tf.squeeze(conv4_1, [1, 2], name='cls_prob')
-                cls_prob = tf.nn.softmax(logits=conv4_1)
-                bbox_pred = tf.squeeze(bbox_pred, [1, 2], name='bbox_pred')
-                if FLAGS.loss_type == 'SF':
-                    cls_loss = cls_ohem(conv4_1, cls_label)
-                elif FLAGS.loss_type == 'FL':
-                    cls_loss = focal_loss(conv4_1, cls_label, FLAGS.fl_gamma, FLAGS.fl_alpha)
-                bbox_loss = bbox_ohem(bbox_pred, bbox_target, cls_label)
-                return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
-            else:
-                cls_prob = tf.nn.softmax(logits=conv4_1)
-                return cls_prob, bbox_pred, end_points
-                #return [cls_prob, bbox_pred, conv4_1]
+                logits = slim.conv2d(net, 2, kernel_size=1, scope='cls_prob', activation_fn=None)
+                bbox_pred = slim.conv2d(net, 4, kernel_size=1, scope='bbox_reg', activation_fn=None)
+                # Older model name
+                # logits = slim.conv2d(net, 2, kernel_size=1, scope='conv4_1', activation_fn=None)
+                # bbox_pred = slim.conv2d(net, 4, kernel_size=1, scope='conv4_2', activation_fn=None)
+                end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+                if is_training:
+                    logits = tf.squeeze(logits, name='squeeze_cls_prob')
+                    cls_prob = tf.nn.softmax(logits=logits)
+                    bbox_pred = tf.squeeze(bbox_pred, name='squeeze_bbox_pred')
+                    if FLAGS.loss_type == 'SF':
+                        cls_loss = cls_ohem(logits, cls_label)
+                    elif FLAGS.loss_type == 'FL':
+                        cls_loss = focal_loss(logits, cls_label, FLAGS.fl_gamma, FLAGS.fl_alpha)
+                    bbox_loss = bbox_ohem(bbox_pred, bbox_target, cls_label)
+                    return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
+                else:
+                    if mode == 'VERIFY':
+                        logits = tf.squeeze(logits, name='verify_squeeze_cls_prob')
+                        bbox_pred = tf.squeeze(bbox_pred, name='verify_squeeze_bbox_pred')
+                    cls_prob = tf.nn.softmax(logits=logits)
+                    return cls_prob, bbox_pred, end_points
 
 
 def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
@@ -374,7 +371,7 @@ def JDAP_48Net(inputs, label=None, bbox_target=None, is_training=True):
                 return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
             else:
                 cls_prob = tf.nn.softmax(logits=cls_prob)
-                return cls_prob, bbox_pred
+                return cls_prob, bbox_pred, end_points
 
 
 def JDAP_48Net_Lanmark(inputs, label=None, bbox_target=None, landmark_target=None, is_training=True):
