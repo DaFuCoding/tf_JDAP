@@ -1,14 +1,12 @@
 import argparse
 import sys
 import os
-import math
-import glob
-
 import tensorflow as tf
 import numpy as np
 import cv2
 
-from detectAPI import FDDB
+from detectAPI import DetectAPI
+from prepare_data.data_base import FDDB
 
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '1')
 
@@ -46,7 +44,8 @@ def parse_args():
                         default=[
                                 # PNet
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_wider_OHEM_0.7/pnet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_redundant/pnet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_redundant/pnet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/pnet/pnet_OHEM_0.7_wo_pooling/pnet',
                                 # RNet
                                 '/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7/rnet',
                                 # ONet
@@ -54,14 +53,13 @@ def parse_args():
                                 '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_landmark_pose_OHEM_0.7/onet',
                         ], type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
-                        default=[16, 16, 16], type=int)
+                        default=[13, 16, 16], type=int)
     parser.add_argument('--batch_size', dest='batch_size', help='list of batch size used in prediction', nargs="+",
                         default=[2048, 256, 16], type=int)
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
                         default=[0.4, 0.1, 0.1], type=float)
     parser.add_argument('--min_face', dest='min_face', help='minimum face size for detection',
                         default=24, type=int)
-    parser.add_argument('--vis', dest='vis', default=True, help='turn on visualization', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -70,8 +68,11 @@ if __name__ == '__main__':
     args = parse_args()
     print('Called with argument:')
     print(args)
-    output_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/redundant_0.4_16.txt'
+    output_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/pnet/pnet_OHEM_0.7_wo_pooling.txt'
 
+    detector = DetectAPI(args.prefix, args.epoch, args.test_mode, args.batch_size,
+                         is_ERC=False, thresh=args.thresh, min_face_size=args.min_face)
+    # Select data set
     if args.dataset_name == 'fddb':
         brew_fun = FDDB
     elif args.dataset_name == 'wider':
@@ -79,24 +80,13 @@ if __name__ == '__main__':
     elif args.dataset_name == '300wp':
         pass
 
-    Evaluator = brew_fun(args.dataset_path, args.vis,
-                         args.name_list, args.prefix, args.epoch, args.test_mode, args.batch_size,
-                         is_ERC=False, thresh=args.thresh, min_face_size=args.min_face)
-
-    Evaluator.do_eval(output_file)
-    # for label_info in Evaluator.label_infos:
-    #     image_name = Evaluator.label_parser(label_info)
-    #     image = cv2.imread(image_name)
-    #     # All output result
-    #     results = Evaluator.detect(image)
-    #     if Evaluator.vis:
-    #         Evaluator.show_result(image, results)
-
-    # stage = 48
-    # img_list = glob.glob('/home/dafu/Pictures/test/%d_*.jpg' % stage)
-    # test_single_net(img_list, '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_landmark_pose_OHEM_0.7/onet',
-    #                 16, stage, True)
-
-    # test_aux_net(args.name_list, args.dataset_path, args.prefix,
-    #              args.epoch, args.batch_size, args.test_mode,
-    #              args.thresh, args.min_face, args.stride, args.vis)
+    Evaluator = brew_fun(args.dataset_path, args.name_list)
+    # Demo test
+    for label_info in Evaluator.label_infos:
+        image_name = Evaluator.label_parser(label_info)
+        image = cv2.imread(image_name)
+        # All output result
+        results = detector.detect(image)
+        # Return detect result adapt to evaluation
+        #print(Evaluator.do_eval(label_info, results))
+        detector.show_result(image, results)

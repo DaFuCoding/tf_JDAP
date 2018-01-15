@@ -197,8 +197,13 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
 
 
 def main(_):
+    global_param_dict = tf.app.flags.FLAGS.__dict__['__flags']
+    for k, v in global_param_dict.items():
+        print (k, v)
+
     if FLAGS.image_size == 12:
-        net_factory = JDAP_Net.JDAP_12Net
+        #net_factory = JDAP_Net.JDAP_12Net
+        net_factory = JDAP_Net.JDAP_12Net_wo_pooling
     elif FLAGS.image_size == 24:
         if FLAGS.is_ERC:
             net_factory = JDAP_Net.JDAP_24Net_ERC

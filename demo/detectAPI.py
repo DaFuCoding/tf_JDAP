@@ -1,10 +1,10 @@
-#_*_ coding: utf-8 _*_
+# _*_ coding: utf-8 _*_
 import os
 
 import numpy as np
 import cv2
 
-from nets.JDAP_Net import JDAP_12Net as P_Net
+from nets.JDAP_Net import JDAP_12Net_wo_pooling as P_Net
 from nets.JDAP_Net import JDAP_24Net as R_Net
 from nets.JDAP_Net import JDAP_24Net_ERC as R_Net_ERC
 from nets.JDAP_Net import JDAP_48Net as O_Net
@@ -13,23 +13,12 @@ from fcn_detector import FcnDetector
 from jdap_detect import JDAPDetector
 from detector import Detector
 
-__all__ = ['FDDB', 'WIDER', 'CelebA', 'AFLW', 'L300WP']
-
 
 class DetectAPI(object):
-    def __init__(self, image_name_file,
-                 prefix, epoch, test_mode, batch_size, is_ERC, thresh, min_face_size):
-        self.label_infos = self.get_labels(image_name_file)
+    def __init__(self, prefix, epoch, test_mode, batch_size, is_ERC, thresh, min_face_size):
         # To do compare experiments
         self.fix_param = [test_mode, batch_size, is_ERC, thresh, min_face_size]
         self.jdap_detector = self._init_model(prefix, epoch)
-
-    def get_labels(self, image_name_file):
-        if not os.path.exists(image_name_file):
-            raise ValueError("File is not exist.")
-        with open(image_name_file, 'r') as f:
-            lines = f.readlines()
-        return lines
 
     # TODO:Loading new model, other no change
     def reset_model(self, prefix, epoch):
@@ -75,96 +64,47 @@ class DetectAPI(object):
             # Face rect and score
             bbox = cal_boxes[i, :4]
             score = cal_boxes[i, 4]
-            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-            cv2.putText(image, '%.2f' % score, ((x1 + x2) // 2, (y1 + y2) // 2), 1, 1, (0, 0, 200), 2)
-            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 200), 2)
+            self.draw_rectangle(image, bbox)
+            self.draw_text(image, bbox, score)
 
             # Face landmark
             if self.aux_idx == 3 or self.aux_idx == 1:
                 land_point = np.round(results[1][i]).astype(dtype=np.int32)
+                self.draw_point(image, land_point, 5)
                 # point_x = int(land_reg[i][land_id * 2] * proposal_side + src_boxes[i][0])
                 # point_y = int(land_reg[i][land_id * 2 + 1] * proposal_side + src_boxes[i][1])
-                for p in range(5):
-                    cv2.circle(image, (land_point[p], land_point[5+p]), 2, (200, 0, 0), 2)
+                # for p in range(5):
+                #     cv2.circle(image, (land_point[p], land_point[5+p]), 2, (200, 0, 0), 2)
 
             # Head pose
             if self.aux_idx == 3 or self.aux_idx == 2:
                 head_pose = results[2][i] * 180 / 3.14
-                pose_info = "%.2f %.2f %.2f" % (head_pose[0], head_pose[1], head_pose[2])
-                cv2.putText(image, pose_info, (x1, y2), 1, 1, (200, 200, 0), 2)
+                self.draw_text(image, bbox, head_pose)
 
         cv2.imshow("show result", image)
         cv2.waitKey(0)
 
-    def get_rect_str_result(self, cal_boxes):
-        rect_str_result = ''
-        for bbox in range(cal_boxes):
-            x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
-            rect_str_result += ' '.join(str(x) for x in [x1, y1, x2 - x1 + 1, y2 - y1 + 1]) + ' %.4f' % bbox[4] + '\n'
-        return rect_str_result
+    def draw_rectangle(self, image, rect, color=(0, 0, 200)):
+        rect = [int(x) for x in rect]
+        cv2.rectangle(image, (rect[0], rect[1]), (rect[2], rect[3]), color, 2)
 
-    def label_parser(self, label_info):
-        raise NotImplementedError()
+    def draw_point(self, image, points, point_num, color=(200, 0, 0)):
+        for p in range(point_num):
+            cv2.circle(image, (points[p], points[5 + p]), 2, color, 2)
+
+    def draw_text(self, image, rect, text, color=(200, 0, 200)):
+        rect = [int(x) for x in rect]
+        if len(text.shape):
+            s = ' '.join([str('%.2f' % x) for x in text])
+            # Draw top left
+            cv2.putText(image, s, (rect[0], rect[1]), 1, 1, color, 2)
+        else:
+            s = str('%.4f' % text)
+            # Draw center
+            cv2.putText(image, s, ((rect[0]+rect[2])//2, (rect[1]+rect[3])//2), 1, 1, color)
 
     def detect(self, image):
         return self.jdap_detector.detect(image, self.aux_idx)
-
-    def do_eval(self, output_file):
-        """ Ouput detect result in different regular.
-        """
-        pass
-
-
-class FDDB(DetectAPI):
-    def __init__(self, dataset_path, vis,
-                 image_name_file, prefix, epoch, batch_size, test_mode="rnet",
-                 is_ERC=False, thresh=[0.6, 0.6, 0.7], min_face_size=24):
-        super(FDDB, self).__init__(image_name_file, prefix, epoch, batch_size, test_mode,
-                                   is_ERC, thresh, min_face_size)
-        self.dataset_path = dataset_path
-        self.vis = vis
-
-    # TODO: parser regular
-    def label_parser(self, label_info):
-        info = label_info.strip().split()
-        image_name = info[0]
-        if '.jpg' not in image_name:
-            image_name += '.jpg'
-        return os.path.join(self.dataset_path, image_name)
-
-    def get_image_name(self, label_info):
-        image_name = label_info.strip().split()[0]
-        if '.jpg' not in image_name:
-            image_name += '.jpg'
-        return os.path.join(self.dataset_path, image_name)
-
-    def do_eval(self, output_file):
-        with open(output_file, 'w') as fout:
-            for label_info in self.label_infos:
-                image_name = self.get_image_name(label_info)
-                print(image_name)
-                image = cv2.imread(image_name)
-                # All output result
-                results = self.detect(image)
-                cal_boxes = results[0] if type(results) is tuple else results
-
-                box_num = cal_boxes.shape[0]
-                x = cal_boxes[:, 0]
-                y = cal_boxes[:, 1]
-                w = cal_boxes[:, 2] - cal_boxes[:, 0] + 1
-                h = cal_boxes[:, 3] - cal_boxes[:, 1] + 1
-                scores = cal_boxes[:, 4]
-                # label_info including \n
-                write_result = '%s%d\n' % (label_info, box_num)
-                for i in range(box_num):
-                    # Face rect and score
-                    write_result += '%d %d %d %d %.4f\n' % (x[i], y[i], w[i], h[i], scores[i])
-                fout.write(write_result)
-
-
-
-class WIDER(DetectAPI):
-    pass
 
 
 def test_aux_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="rnet",

@@ -5,7 +5,7 @@ A face detection algorithm joint multi-task using cascade structure in CNN. This
 
 ### Requirement
 Quick overview of requirements:
-
+    - Linux(ubuntu 16.04 my test)
 	- tensorflow 1.0.1(or more high)
 	- python 2.7
 	- opencv-python
@@ -13,8 +13,7 @@ Quick overview of requirements:
 
 ### Preparation Data
 	- WIDER-FACE
-	- CelebA
-	- AFLW
+	- 300W-LP
 
 ### Data Label Design
 
@@ -30,24 +29,35 @@ Pose sample label: image_name class_id pose_regressor
 class_id: -2(Landmark) -3(Pose)
 
 ### Training PNet
-1. Modfiy "prepare_data/gen_pnet_data.py" ** data_root_dir ** and ** save_dir_root **.
-2. Select suitable parameters like IoU thresh and how many negative samples per image. 
+1. Modfiy **data_root_dir** and **save_dir_root** of "prepare_data/gen_pnet_train_data.py" and "prepare_data/gen_pnet_val_data.py" .
+2. Select suitable parameters. 
+- **Main options:**
+  - IoU thresh
+  - how many negative samples per image
+  - pos_aug_ratio(without augment model performance is good. T^T)
 3. > ./scripts/make_pnet_train_val_data.sh
-4. Modfiy "prepare_data/gen_imglist.py" ** save_data_dir ** and ** netSize **
-5. Select ** ratio ** and run
-6. According to self task design label in "prepare_data/multithread_create_tfrecords.py" ** _set_single_example **
-7. Modify "scripts/make_tfrecords.sh" and run
-8. Adjustment "scripts/train_cls.sh" and run
+4. Modfiy "prepare_data/gen_imglist.py" **save_data_dir **and **netSize**
+5. According to self task design label in "prepare_data/multithread_create_tfrecords.py" **_set_single_example**
+6. Modify "scripts/make_tfrecords.sh" and run
+7. Adjustment "scripts/train_cls.sh" and run
 
 ### Training RNet
-
+1. Modfiy "prepare_data/gen_hard_sample.py" set yourself fold root
+2. **stage = 1** get PNet detect result and save it as pickle
+3. **stage = 2** crop and save image patch
+4. Like PNet generate tfrecords
+5. Adjustment "scripts/train_cls.sh" and run
 
 ### Training ONet
+1. Modfiy "prepare_data/gen_hard_sample.py" set yourself fold root, get classify samples
+2. 
 
 ### Demo
+Select model file and suitable hyper parameters
+> python ./demo/mtcnn.py
 
 ### FAQ
-1. 
+1. lr = 0.01, lr_decay_scale = 0.1 and epoch [7 ,13] make lr decay
 	
 2. Small batch size(BS)
 	- Small BS can get higher recall than large BS in FDDB.
@@ -67,6 +77,8 @@ class_id: -2(Landmark) -3(Pose)
 	- New strategy in [2], but increase more parameters.
 10. 
 
+### Conclusion
+1. PNet use conv1-s2 replace max pooling and small batch size
 
 
 ### References
