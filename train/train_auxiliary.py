@@ -14,7 +14,7 @@ from nets import JDAP_Net
 import train_core
 
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', str(config.gpu_id))
-
+FLAGS = tf.app.flags
 
 def train_landmark_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, landmark_tfrecords,
                        frequent=500):
@@ -296,6 +296,96 @@ def train_landmark_pose_net(net_factory, model_prefix, logdir, end_epoch, netSiz
                      np.mean(landmark_loss_list), np.mean(pose_reg_loss_list)))
             saver.save(sess, model_prefix, cur_epoch)
 
+
+def train_attribute_net(net_factory, model_prefix, logdir, end_epoch, netSize, tfrecords, attrib_tfrecords,
+                        frequent=500):
+    with tf.Graph().as_default():
+        #########################################
+        # Get Pose and Detect train data from tfrecords. #
+        #########################################
+        cls_images, cls_labels, bbox_reg_labels = stat_tfrecords.ReadTFRecord(tfrecords, netSize, 3)
+        cls_image_batch, cls_label_batch, bbox_reg_label_batch = tf.train.shuffle_batch(
+            [cls_images, cls_labels, bbox_reg_labels], batch_size=FLAGS.batch_size, capacity=20000,
+            min_after_dequeue=10000, num_threads=16, allow_smaller_final_batch=True)
+
+        attrib_images, attrib_cls,  attrib_head_pose_labels, attrib_land_reg_labels = stat_tfrecords.ReadTFRecord(
+            attrib_tfrecords, netSize, 3, vector_name=['head_pose', 'landmark_reg'], vector_dim=[3, 7*2])
+        attrib_image_batch, attrib_cls_label_batch, attrib_reg_label_batch, attrib_head_pose_batch, attrib_land_reg_batch = \
+            tf.train.shuffle_batch(
+                [attrib_images, attrib_cls, attrib_head_pose_labels, attrib_land_reg_labels],
+                batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16,
+                allow_smaller_final_batch=True)
+        images = tf.concat([cls_image_batch, attrib_image_batch], axis=0)
+        labels = tf.concat([cls_label_batch, attrib_cls_label_batch], axis=0)
+
+        # Network Forward
+        cls_prob_op, bbox_pred_op, landmark_pred_op, pose_reg_pred_op, cls_loss_op, bbox_loss_op, landmark_loss_op, pose_reg_loss_op, end_points = \
+            net_factory(inputs=images, label=labels, bbox_target=bbox_reg_label_batch,
+                        landmark_target=attrib_land_reg_labels, pose_reg_target=attrib_head_pose_labels)
+
+        #########################################
+        # Configure the optimization procedure. #
+        #########################################
+        global_step = tf.Variable(0, trainable=False)
+        # learning_rate = _configure_learning_rate(config.IMAGESUM, global_step)
+        boundaries = [int(epoch * config.IMAGESUM / config.BATCH_SIZE) for epoch in config.LR_EPOCH]
+        lr_values = [config.BASE_LR * (config.learning_rate_decay_factor ** x) for x in
+                     range(0, len(config.LR_EPOCH) + 1)]
+        learning_rate = tf.train.piecewise_constant(global_step, boundaries, lr_values)
+        optimizer = train_core._configure_optimizer(learning_rate)
+
+        train_op = optimizer.minimize(
+            train_core.task_add_weight(cls_loss_op, bbox_loss_op, landmark_loss_op=landmark_loss_op,
+                                       pose_loss_op=pose_reg_loss_op), global_step)
+        tf.summary.scalar('learning_rate', learning_rate)
+        tf.summary.scalar('cls_loss', cls_loss_op)
+        tf.summary.scalar('bbox_reg_loss', bbox_loss_op)
+        tf.summary.scalar('pose_reg_loss', pose_reg_loss_op)
+        tf.summary.scalar('loss_sum', cls_loss_op + bbox_loss_op + pose_reg_loss_op)
+        if netSize == 48:
+            pass
+
+        model_dir = model_prefix.rsplit('/', 1)[0]
+        if not os.path.exists(model_dir):
+            os.makedirs(model_dir)
+
+        # Adaptive use gpu memory
+        tf_config = tf.ConfigProto()
+        # tf_config.gpu_options.per_process_gpu_memory_fraction = 0.4
+        tf_config.gpu_options.allow_growth = True
+        sess = tf.Session(config=tf_config)
+        saver = tf.train.Saver()
+        coord = tf.train.Coordinator()
+        sess.run(tf.global_variables_initializer())
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        summary_writer = tf.summary.FileWriter(logdir, sess.graph)
+        summary_op = tf.summary.merge_all()
+
+        n_step_epoch = int(config.IMAGESUM / config.BATCH_SIZE)
+        for cur_epoch in range(1, end_epoch + 1):
+            cls_loss_list = []
+            bbox_loss_list = []
+            landmark_loss_list = []
+            pose_reg_loss_list = []
+            for batch_idx in range(n_step_epoch):
+                _, cls_pred, bbox_pred, landmark_pred, pose_reg_pred, cls_loss, bbox_loss, landmark_loss, pose_reg_loss, lr, summary_str, gb_step = sess.run(
+                    [train_op, cls_prob_op, bbox_pred_op, landmark_pred_op, pose_reg_pred_op, cls_loss_op, bbox_loss_op,
+                     landmark_loss_op, pose_reg_loss_op, learning_rate, summary_op, global_step])
+                cls_loss_list.append(cls_loss)
+                bbox_loss_list.append(bbox_loss)
+                landmark_loss_list.append(landmark_loss)
+                pose_reg_loss_list.append(pose_reg_loss)
+                if not batch_idx % frequent:
+                    summary_writer.add_summary(summary_str, gb_step)
+                    print(
+                    "%s: Epoch: %d, cls loss: %4f, bbox loss: %4f landmark loss: %4f pose_reg_loss: %4f learning_rate: %4f"
+                    % (datetime.now(), cur_epoch, np.mean(cls_loss_list), np.mean(bbox_loss_list),
+                       np.mean(landmark_loss_list), np.mean(pose_reg_loss_list), lr))
+                    sys.stdout.flush()
+            print("%s: Epoch: %d, cls loss: %4f, bbox loss: %4f landmark loss: %4f pose_reg_loss: %4f"
+                  % (datetime.now(), cur_epoch, np.mean(cls_loss_list), np.mean(bbox_loss_list),
+                     np.mean(landmark_loss_list), np.mean(pose_reg_loss_list)))
+            saver.save(sess, model_prefix, cur_epoch)
 
 def main():
     logdir = '../logdir/onet/onet_wider_landmark_pose_FL_gamma2'

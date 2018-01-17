@@ -6,6 +6,7 @@ import cv2
 
 from nets.JDAP_Net import JDAP_12Net_wo_pooling as P_Net
 from nets.JDAP_Net import JDAP_24Net as R_Net
+from nets.JDAP_Net import JDAP_mNet as M_Net
 from nets.JDAP_Net import JDAP_24Net_ERC as R_Net_ERC
 from nets.JDAP_Net import JDAP_48Net as O_Net
 from nets.JDAP_Net import JDAP_48Net_Lanmark_Pose as O_AUX_Net
@@ -40,7 +41,8 @@ class DetectAPI(object):
                 self.aux_idx = 4
                 RNet = Detector(R_Net_ERC, 24, batch_size[1], model_path[1], self.aux_idx)
             else:
-                RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
+                RNet = Detector(M_Net, 18, batch_size[1], model_path[1])
+                #RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
             detectors[1] = RNet
 
         # load onet model

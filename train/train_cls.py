@@ -89,7 +89,7 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
             tf.train.shuffle_batch([cls_data_label['image'], cls_data_label['cls_label'], cls_data_label['reg_label']],
                                    batch_size=FLAGS.batch_size, capacity=20000, min_after_dequeue=10000, num_threads=16,
                                    allow_smaller_final_batch=True)
-        if val_tfrecords is not []:
+        if len(val_tfrecords):
             eval_cls_op, eval_bbox_pred_op = eval_net(net_factory, val_tfrecords, net_size)
         # Network Forward
         if FLAGS.is_ERC:
@@ -110,10 +110,11 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
 
         optimizer = train_core.configure_optimizer(lr_op)
         if FLAGS.is_ERC:
-            train_op = optimizer.minimize(ERC1_loss_op + ERC2_loss_op + cls_loss_op + bbox_loss_op, global_step)
+            total_loss = ERC1_loss_op + ERC2_loss_op + cls_loss_op + bbox_loss_op
         else:
-            train_op = optimizer.minimize(train_core.task_add_weight(cls_loss_op, bbox_loss_op), global_step)
+            total_loss = train_core.task_add_weight(cls_loss_op, bbox_loss_op)
 
+        train_op = optimizer.minimize(total_loss, global_step)
         #########################################
         # Save train/verify summary.            #
         #########################################
@@ -169,7 +170,9 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
 
             for batch_idx in range(n_step_epoch):
                 _, cls_pred, bbox_pred, cls_loss, bbox_loss, lr, summary_str, gb_step = \
-                    sess.run([train_op, cls_prob_op, bbox_pred_op, cls_loss_op, bbox_loss_op, lr_op, summary_op, global_step])
+                    sess.run([train_op, cls_prob_op, bbox_pred_op, cls_loss_op, bbox_loss_op,
+                              lr_op, summary_op, global_step])
+
                 cls_loss_list.append(cls_loss)
                 bbox_loss_list.append(bbox_loss)
 
@@ -182,16 +185,17 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
                   (datetime.now(), cur_epoch, np.mean(cls_loss_list), np.mean(bbox_loss_list)))
             saver.save(sess, model_prefix, cur_epoch)
             # Computer val set accuracy, using the same as train batch_size
-            n_step_val = int(np.ceil(FLAGS.val_image_sum) / FLAGS.batch_size)
-            val_cls_prob = []
-            val_bbox_error = []
-            for step in range(n_step_val):
-                val_prob = sess.run(eval_cls_op)
-                val_bbox = sess.run(eval_bbox_pred_op)
-                val_cls_prob.append(val_prob)
-                val_bbox_error.append(val_bbox)
-            print("Epoch: %d, cls accuracy: %4f" % (cur_epoch, np.mean(val_cls_prob)))
-            print("Bbox_reg_square_mean_deviation: " + str(np.mean(val_bbox_error, axis=0)))
+            if len(val_tfrecords):
+                n_step_val = int(np.ceil(FLAGS.val_image_sum) / FLAGS.batch_size)
+                val_cls_prob = []
+                val_bbox_error = []
+                for step in range(n_step_val):
+                    val_prob = sess.run(eval_cls_op)
+                    val_bbox = sess.run(eval_bbox_pred_op)
+                    val_cls_prob.append(val_prob)
+                    val_bbox_error.append(val_bbox)
+                print("Epoch: %d, cls accuracy: %4f" % (cur_epoch, np.mean(val_cls_prob)))
+                print("Bbox_reg_square_mean_deviation: " + str(np.mean(val_bbox_error, axis=0)))
         coord.request_stop()
         coord.join(threads)
 
@@ -203,12 +207,16 @@ def main(_):
 
     if FLAGS.image_size == 12:
         #net_factory = JDAP_Net.JDAP_12Net
-        net_factory = JDAP_Net.JDAP_12Net_wo_pooling
+        #net_factory = JDAP_Net.JDAP_12Net_wo_pooling
+        net_factory = JDAP_Net.JDAP_12Net_wop_relu6
+    elif FLAGS.image_size == 18:
+        net_factory = JDAP_Net.JDAP_mNet
     elif FLAGS.image_size == 24:
         if FLAGS.is_ERC:
             net_factory = JDAP_Net.JDAP_24Net_ERC
         else:
             net_factory = JDAP_Net.JDAP_24Net
+            #net_factory = JDAP_Net.JDAP_24Net_wo_pooling
     elif FLAGS.image_size == 48:
         net_factory = JDAP_Net.JDAP_48Net
 
@@ -218,16 +226,16 @@ def main(_):
     tfrecords_num = FLAGS.tfrecords_num
     tfrecords_root = FLAGS.tfrecords_root
     for i in range(tfrecords_num):
-        print(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
-        cls_tfrecords.append(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
+        print(tfrecords_root + "_wop_add_gt-%.5d-of-0000%d" % (i, tfrecords_num))
+        cls_tfrecords.append(tfrecords_root + "_wop_add_gt-%.5d-of-0000%d" % (i, tfrecords_num))
     print(cls_tfrecords)
     for i in range(tfrecords_num):
-        print(tfrecords_root + "_val-%.5d-of-0000%d" % (i, tfrecords_num))
-        val_tfrecords.append(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
-
+        print(tfrecords_root + "_wop_val-%.5d-of-0000%d" % (i, tfrecords_num))
+        val_tfrecords.append(tfrecords_root + "_wop_val-%.5d-of-0000%d" % (i, tfrecords_num))
+#FLAGS.image_size
     train_net(net_factory=net_factory, model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
-              end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
-              val_tfrecords=val_tfrecords, frequent=FLAGS.frequent)
+              end_epoch=FLAGS.end_epoch, net_size=24, tfrecords=cls_tfrecords,
+              val_tfrecords=[], frequent=FLAGS.frequent)
 
 
 if __name__ == '__main__':

@@ -1,13 +1,15 @@
 #__all__ = ['py_nms', 'generate_bbox', 'resize_image_by_wh', 'calc_scale']
-
+import os
 import cv2
 import numpy as np
 import numpy.random as npr
 import sys
 if sys.version_info[0] == 2:
     import Queue as queue
+    import pickle as cPickle
 elif sys.version_info[0] == 3:
     import queue
+    import cPickle
 
 
 def IoU(box, boxes):
@@ -271,6 +273,25 @@ def calibrate_box(bbox, reg):
     aug = reg_m * reg
     bbox_c[:, 0:4] = bbox_c[:, 0:4] + aug
     return bbox_c
+
+
+def detect_save_pickle(detector, dataset_indicator, pickle_name):
+    count = 0
+    detections = list()  # detect result
+    for label_info in dataset_indicator.label_infos:
+        # Interactive information
+        if count % 100 == 0:
+            print("Handle image %d " % count)
+        count += 1
+        image_name = dataset_indicator.get_image_name(label_info)
+        image = cv2.imread(image_name)
+        cal_boxes = detector.detect(image)
+        detections.append(cal_boxes)
+
+    #save_path = os.path.join(data_dir, str(net_size))
+    #save_file = os.path.join(save_path, pickle_name)
+    with open(pickle_name, 'wb') as f:
+        cPickle.dump(detections, f, cPickle.HIGHEST_PROTOCOL)
 
 
 class DataPretreat(object):

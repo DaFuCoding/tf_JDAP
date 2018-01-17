@@ -7,18 +7,14 @@ import numpy.random as npr
 import argparse
 import os
 import sys
-if sys.version_info[0] == 2:
-    import pickle as cPickle
-elif sys.version_info[0] == 3:
-    import cPickle
 
-os.environ.setdefault('CUDA_VISIBLE_DEVICES', '1')
+os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')
 
 # Set yourself fold root
-net_size = 24
+net_size = 48
 wider_root_path = '/home/dafu/data/WIDER_FACE'
 data_dir = '/home/dafu/data/jdap_data'
-add_dir_name = 'wop_'  # default is ''
+add_dir_name = 'mnet_'  # default is ''
 
 
 def save_hard_example(dataset_indicator, pickle_name):
@@ -42,7 +38,7 @@ def save_hard_example(dataset_indicator, pickle_name):
     fneg = open(os.path.join(save_path, '%s_%sneg_%d.txt' % (mode, add_dir_name, net_size)), 'w')
     fpart = open(os.path.join(save_path, '%s_%spart_%d.txt' % (mode, add_dir_name, net_size)), 'w')
 
-    det_boxes = cPickle.load(open(os.path.join(save_path, '%s' % pickle_name), 'r'))
+    det_boxes = cPickle.load(open(pickle_name, 'r'))
     print (len(det_boxes), num_of_images)
     assert len(det_boxes) == num_of_images, "incorrect detections or ground truths"
 
@@ -84,8 +80,12 @@ def save_hard_example(dataset_indicator, pickle_name):
             # save negative images and write label
             if np.max(iou) < 0.3:
                 # Sampling select very hard samples
-                if npr.rand(1) > 0.3 or box[4] < 0.8:
-                    continue
+                if net_size == 24 or net_size == 18:
+                    if npr.rand(1) > 0.3 or box[4] < 0.8:
+                        continue
+                if net_size == 48:
+                    if npr.rand(1) > 0.7 or box[4] < 0.3:
+                        continue
                 save_file = os.path.join(neg_save_dir, "%d.jpg" % n_idx)
                 fneg.write("%d/%s_%snegative/%d.jpg" %
                            (net_size, mode, add_dir_name, n_idx) + ' 0 0 0 0 0\n')
@@ -122,33 +122,65 @@ def save_hard_example(dataset_indicator, pickle_name):
     fpart.close()
 
 
-def save_pickle(detector, dataset_indicator, pickle_name):
-    count = 0
-    detections = list()  # detect result
-    for label_info in dataset_indicator.label_infos:
-        # Interactive information
-        if count % 100 == 0:
-            print("Handle image %d " % count)
-        count += 1
-        image_name = dataset_indicator.get_image_name(label_info)
+def save_gt_sample(dataset_indicator):
+    annotations = dataset_indicator.label_infos
+    num_of_images = len(annotations)
+    print ("processing %d images in total" % num_of_images)
+    idx = 0
+    p_idx = 0
+    save_path = os.path.join(data_dir, "%d" % net_size)
+    pos_save_dir = os.path.join(save_path, "train_gt_positive")
+    if not os.path.exists(pos_save_dir):
+        os.mkdir(pos_save_dir)
+    f_gt_pos = open(os.path.join(save_path, "train_gt_%d.txt" % net_size), 'w')
+    for label_info in annotations:
+        dict_info = dataset_indicator.label_parser(label_info)
+        image_name = dict_info['image_name']
+        # Get attribute ground truth
+        gt_boxes = dict_info['gt_boxes']
         image = cv2.imread(image_name)
-        cal_boxes = detector.detect(image)
-        detections.append(cal_boxes)
+        idx += 1
+        if idx % 100 == 0:
+            print(idx, "images done")
 
-    save_path = os.path.join(data_dir, str(net_size))
-    save_file = os.path.join(save_path, pickle_name)
-    with open(save_file, 'wb') as f:
-        cPickle.dump(detections, f, cPickle.HIGHEST_PROTOCOL)
+        height, width, channel = image.shape
+        for box in gt_boxes:
+            # box (x_left, y_top, x_right, y_bottom)
+            x1, y1, x2, y2 = box
+            w = x2 - x1 + 1
+            h = y2 - y1 + 1
+
+            # ignore small faces
+            if max(w, h) < 24 or x1 < 0 or y1 < 0:
+                continue
+            # Add ground truth samples
+            best_side = int(np.sqrt(w * h))
+            best_x1 = int(max(x1 + (w - best_side) / 2, 0))
+            best_y1 = int(max(y1 + (h - best_side) / 2, 0))
+            best_x2 = int(best_x1 + best_side - 1)
+            best_y2 = int(best_y1 + best_side - 1)
+            if best_x2 < width and best_y2 < height:
+                gt_img = image[best_y1:best_y2 + 1, best_x1:best_x2 + 1, :]
+                resized_im = cv2.resize(gt_img, (net_size, net_size), interpolation=cv2.INTER_LINEAR)
+                offset_x1 = (x1 - best_x1) / float(best_side)
+                offset_y1 = (y1 - best_y1) / float(best_side)
+                offset_x2 = (x2 - best_x2) / float(best_side)
+                offset_y2 = (y2 - best_y2) / float(best_side)
+                save_file = os.path.join(pos_save_dir, "%d.jpg" % p_idx)
+                f_gt_pos.write("%d/train_gt_positive/%d.jpg" % (net_size, p_idx) + ' 1 %.2f %.2f %.2f %.2f\n'
+                               % (offset_x1, offset_y1, offset_x2, offset_y2))
+                cv2.imwrite(save_file, resized_im)
+                p_idx += 1
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Generate hard train and verify data.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
-                        default='pnet', type=str)
+                        default='rnet', type=str)
     parser.add_argument('--prefix', dest='prefix', help='prefix of model name', nargs="+",
                         default=['../models/pnet/pnet_OHEM_0.7_wo_pooling/pnet',
-                                 '../models/rnet/rnet_wider_OHEM_0.7/rnet',
+                                 '../models/mnet/mnet_wider_OHEM_0.7_wop_pnet_add_gt/mnet',
                                  ''],
                         type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
@@ -175,17 +207,19 @@ if __name__ == '__main__':
     val_dataset_indicator = WIDER(wider_face_val_path, val_annotation_file, 'val')
 
     stage = 2
-    train_pickle_name = 'cands_train_%s%d_0.4.pkl' % (add_dir_name, net_size)
-    val_pickle_name = 'cands_val_%s%d_0.4.pkl' % (add_dir_name, net_size)
+    train_pickle_name = os.path.join(os.path.join(data_dir, str(net_size), 'cands_train_%s%d_0.4_0.1.pkl' % (add_dir_name, net_size)))
+    val_pickle_name = os.path.join(os.path.join(data_dir, str(net_size), 'cands_val_%s%d_0.4.pkl' % (add_dir_name, net_size)))
     if stage == 1:
         # Load model and dataset_indicator
         detector = DetectAPI(args.prefix, args.epoch, args.test_mode, args.batch_size, False, args.thresh, args.min_face)
         # 1. Detect and save pickle
-        save_pickle(detector, train_dataset_indicator, train_pickle_name)
-        save_pickle(detector, val_dataset_indicator, val_pickle_name)
+        detect_save_pickle(detector, train_dataset_indicator, train_pickle_name)
+        #save_pickle(detector, val_dataset_indicator, val_pickle_name)
 
     elif stage == 2:
+        pass
         # 2. Crop and save face samples by pickle file
+        #save_gt_sample(train_dataset_indicator)
         save_hard_example(train_dataset_indicator, train_pickle_name)
-        save_hard_example(val_dataset_indicator, val_pickle_name)
+        #save_hard_example(val_dataset_indicator, val_pickle_name)
 

@@ -89,8 +89,8 @@ class TFRecord(object):
                     "img_raw": _bytes_feature(img_raw),
                     "cls_label": _int64_feature(image_example[1]),
                     "reg_label": _float_feature(image_example[2:6]),
-                    # "landmark_label": _float_feature(image_example[2:12]),
                     # "pose_label": _float_feature(image_example[2:5]),
+                    # "landmark_label": _float_feature(image_example[2:12]),
                 }
             ))
         return example

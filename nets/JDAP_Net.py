@@ -137,6 +137,43 @@ def pose_reg_ohem(pose_logits, pose_reg_label, cls_label_int64):
     return tf.reduce_mean(pose_reg_loss)
 
 
+def JDAP_12Net_wop_relu6(inputs, cls_label=None, bbox_target=None, is_training=True, mode='TRAIN'):
+    with tf.variable_scope("JDAP_12Net_wop_relu6") as scope:
+        end_points_collection = scope.name + '_end_points'
+        with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
+                            activation_fn=tf.nn.relu6, biases_initializer=tf.zeros_initializer(),
+                            weights_regularizer=slim.l2_regularizer(0.00001), padding='VALID',
+                            outputs_collections=[end_points_collection]):
+            with slim.arg_scope([slim.max_pool2d]):
+                channel_scale = 1.0
+                net = slim.conv2d(inputs, 10*channel_scale, kernel_size=3, stride=2, scope='conv1_s2')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 16*channel_scale, kernel_size=3, scope='conv2')
+                net = slim.conv2d(net, 32*channel_scale, kernel_size=3, scope='conv3')
+                print(net.get_shape())
+
+                logits = slim.conv2d(net, 2, kernel_size=1, scope='cls_prob', activation_fn=None)
+                bbox_pred = slim.conv2d(net, 4, kernel_size=1, scope='bbox_reg', activation_fn=None)
+                end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+                if is_training:
+                    logits = tf.squeeze(logits, name='squeeze_cls_prob')
+                    cls_prob = tf.nn.softmax(logits=logits)
+                    bbox_pred = tf.squeeze(bbox_pred, name='squeeze_bbox_pred')
+                    if FLAGS.loss_type == 'SF':
+                        cls_loss = cls_ohem(logits, cls_label)
+                    elif FLAGS.loss_type == 'FL':
+                        cls_loss = focal_loss(logits, cls_label, FLAGS.fl_gamma, FLAGS.fl_alpha)
+                    bbox_loss = bbox_ohem(bbox_pred, bbox_target, cls_label)
+                    return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
+                else:
+                    if mode == 'VERIFY':
+                        logits = tf.squeeze(logits, name='verify_squeeze_cls_prob')
+                        bbox_pred = tf.squeeze(bbox_pred, name='verify_squeeze_bbox_pred')
+                    cls_prob = tf.nn.softmax(logits=logits)
+                    return cls_prob, bbox_pred, end_points
+
+
 def JDAP_12Net_wo_pooling(inputs, cls_label=None, bbox_target=None, is_training=True, mode='TRAIN'):
     with tf.variable_scope("JDAP_12Net_wo_pooling") as scope:
         end_points_collection = scope.name + '_end_points'
@@ -214,8 +251,50 @@ def JDAP_12Net(inputs, cls_label=None, bbox_target=None, is_training=True, mode=
                     return cls_prob, bbox_pred, end_points
 
 
-def JDAP_24Net_wo_pooling(inputs, label=None, bbox_target=None, is_training=True):
-    with tf.variable_scope("JDAP_24Net") as scope:
+def JDAP_mNet(inputs, label=None, bbox_target=None, is_training=True, mode='TRAIN'):
+    with tf.variable_scope("JDAP_mNet") as scope:
+        end_points_collection = scope.name + '_end_points'
+        with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
+                            activation_fn=tf.nn.relu6, weights_regularizer=slim.l2_regularizer(0.00001),
+                            biases_initializer=tf.zeros_initializer(),
+                            outputs_collections=[end_points_collection]):
+            with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
+                                weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=tf.nn.relu6,
+                                outputs_collections=[end_points_collection]):
+                inputs = tf.image.resize_bilinear(inputs, tf.constant([18, 18]))
+                # input size : 18 x 18 x 3
+                # 9 x 9 x 28
+                net = slim.conv2d(inputs, 28, kernel_size=3, stride=2, scope='conv1_s2', padding='SAME')
+                print(net.get_shape())
+                # 4 x 4 x 48
+                net = slim.conv2d(net, 48, kernel_size=3, stride=2, scope='conv2_s2', padding='VALID')
+                print(net.get_shape())
+
+                # 3 x 3 x 64
+                net = slim.conv2d(net, 64, kernel_size=2, scope='conv3', padding='VALID')
+                print(net.get_shape())
+
+                net = slim.flatten(net)
+                net = slim.fully_connected(net, 128, scope='fc1')
+                print(net.get_shape())
+
+                cls_prob = slim.fully_connected(net, 2, scope='cls_prob')
+                bbox_pred = slim.fully_connected(net, 4, scope='bbox_reg')
+                end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+            if is_training:
+                if FLAGS.loss_type == 'SF':
+                    cls_loss = cls_ohem(cls_prob, label)
+                elif FLAGS.loss_type == 'FL':
+                    cls_loss = focal_loss(cls_prob, label, config.FL.gamma, config.FL.alpha)
+                bbox_loss = bbox_ohem(bbox_pred, bbox_target, label)
+                return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
+            else:
+                cls_prob = tf.nn.softmax(logits=cls_prob)
+                return cls_prob, bbox_pred, end_points
+
+
+def JDAP_24Net_wo_pooling(inputs, label=None, bbox_target=None, is_training=True, mode='TRAIN'):
+    with tf.variable_scope("JDAP_24Net_wop") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
                             activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
@@ -227,10 +306,10 @@ def JDAP_24Net_wo_pooling(inputs, label=None, bbox_target=None, is_training=True
                 net = slim.conv2d(inputs, 28, kernel_size=3, stride=2, scope='conv1_s2', padding='VALID')
                 print(net.get_shape())
 
-                net = slim.conv2d(net, 48, kernel_size=3, stride=2, scope='conv2_s2', padding='SAME')
+                net = slim.conv2d(net, 48, kernel_size=3, stride=2, scope='conv2_s2', padding='VALID')
                 print(net.get_shape())
 
-                net = slim.conv2d(net, 64, kernel_size=2, scope='conv3')
+                net = slim.conv2d(net, 64, kernel_size=3, scope='conv3', padding='VALID')
                 print(net.get_shape())
 
                 net = slim.flatten(net)
@@ -253,7 +332,7 @@ def JDAP_24Net_wo_pooling(inputs, label=None, bbox_target=None, is_training=True
             return cls_prob, bbox_pred, end_points
 
 
-def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
+def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True, mode='TRAIN'):
     with tf.variable_scope("JDAP_24Net") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
@@ -277,9 +356,11 @@ def JDAP_24Net(inputs, label=None, bbox_target=None, is_training=True):
                 net = slim.flatten(net)
                 net = slim.fully_connected(net, 128, activation_fn=_prelu, scope='fc1')
                 print(net.get_shape())
-
-                cls_prob = slim.fully_connected(net, 2, scope='fc2')
-                bbox_pred = slim.fully_connected(net, 4, scope='fc3')
+                cls_prob = slim.fully_connected(net, 2, scope='cls_prob')
+                bbox_pred = slim.fully_connected(net, 4, scope='bbox_reg')
+                # Older model name
+                # cls_prob = slim.fully_connected(net, 2, scope='fc2')
+                # bbox_pred = slim.fully_connected(net, 4, scope='fc3')
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         if is_training:
             if FLAGS.loss_type == 'SF':
@@ -560,3 +641,50 @@ def JDAP_48Net_Lanmark_Pose(inputs, label=None, bbox_target=None, landmark_targe
             else:
                 cls_prob = tf.nn.softmax(logits=cls_prob)
                 return cls_prob, bbox_pred, landmark_pred, pose_reg_pred, end_points
+
+
+def JDAP_aNet(inputs, label=None, bbox_target=None, landmark_target=None, pose_reg_target=None, is_training=True):
+    with tf.variable_scope("JDAP_aNet") as scope:
+        end_points_collection = scope.name + '_end_points'
+        with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
+                            activation_fn=tf.nn.relu6, weights_regularizer=slim.l2_regularizer(0.00001),
+                            biases_initializer=tf.zeros_initializer(), outputs_collections=[end_points_collection]):
+            with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
+                                weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=tf.nn.relu6,
+                                outputs_collections=[end_points_collection]):
+                inputs = tf.image.resize_bilinear(inputs, tf.constant([36, 36]))
+                net = slim.conv2d(inputs, 32, kernel_size=3, stride=2, scope='conv1_s2', padding='SAME')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, stride=2, scope='conv2_s2', padding='SAME')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, stride=2, scope='conv3_s2', padding='VALID')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 128, kernel_size=2, scope='conv4', padding='VALID')
+                print(net.get_shape())
+
+                net = slim.flatten(net)
+                net = slim.fully_connected(net, 256, scope='fc1')
+                # Output layer
+                cls_prob = slim.fully_connected(net, 2, scope='cls_prob')
+                bbox_pred = slim.fully_connected(net, 4, scope='bbox_reg')
+                # Add Landmark and Pose task
+                landmark_pred = slim.fully_connected(net, 7*2, scope='landmark_reg')
+                head_pose_pred = slim.fully_connected(net, 3, scope='head_pose')
+
+                end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+            if is_training:
+                if FLAGS.loss_type == 'SF':
+                    cls_loss = cls_ohem(cls_prob, label)
+                elif FLAGS.loss_type == 'FL':
+                    cls_loss = focal_loss(cls_prob, label, config.FL.gamma, config.FL.alpha)
+                bbox_loss = bbox_ohem(bbox_pred, bbox_target, label)
+                head_pose_loss = pose_reg_ohem(head_pose_pred, pose_reg_target, label)
+                landmark_loss = landmark_ohem(landmark_pred, landmark_target, label)
+                return cls_prob, bbox_pred, head_pose_pred, landmark_pred, cls_loss, bbox_loss, \
+                       head_pose_loss, landmark_loss, end_points
+            else:
+                cls_prob = tf.nn.softmax(logits=cls_prob)
+                return cls_prob, bbox_pred, head_pose_pred, landmark_pred, end_points

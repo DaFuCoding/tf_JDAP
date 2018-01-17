@@ -109,7 +109,7 @@ class JDAPDetector(object):
         dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
 
-        cropped_ims = self._candidate_arrange(dets, image, 24)
+        cropped_ims = self._candidate_arrange(dets, image, self.rnet_detector.data_size)
 
         if self.is_ERC:
             cls_scores, reg, reserve_mask = self.rnet_detector.predict(cropped_ims)
@@ -154,7 +154,7 @@ class JDAPDetector(object):
         dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
 
-        cropped_ims = self._candidate_arrange(dets, image, 48)
+        cropped_ims = self._candidate_arrange(dets, image, self.onet_detector.data_size)
 
         if aux_idx == 0:
             cls_scores, bbox_reg = self.onet_detector.predict(cropped_ims)

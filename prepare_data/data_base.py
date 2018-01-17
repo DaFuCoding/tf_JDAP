@@ -1,10 +1,10 @@
 import os
 import numpy as np
-
+from collections import OrderedDict
 __all__ = ['FDDB', 'WIDER', 'CelebA', 'AFLW', 'L300WP']
 
 
-class DataBase(object):
+class _DataBase(object):
     def __init__(self, image_name_file):
         self.label_infos = self.get_labels(image_name_file)
 
@@ -19,7 +19,7 @@ class DataBase(object):
         raise NotImplementedError()
 
 
-class FDDB(DataBase):
+class FDDB(_DataBase):
     def __init__(self, dataset_path, image_name_file):
         super(FDDB, self).__init__(image_name_file)
         self.dataset_path = dataset_path
@@ -50,14 +50,14 @@ class FDDB(DataBase):
         h = cal_boxes[:, 3] - cal_boxes[:, 1] + 1
         scores = cal_boxes[:, 4]
 
-        write_result = '%s\n%d\n' % (pure_image_name, box_num)
+        write_result = '%s \n%d\n' % (pure_image_name, box_num)
         for i in range(box_num):
             # Face rect and score
             write_result += '%d %d %d %d %.4f\n' % (x[i], y[i], w[i], h[i], scores[i])
         return write_result
 
 
-class WIDER(DataBase):
+class WIDER(_DataBase):
     def __init__(self, dataset_path, image_name_file, mode):
         super(WIDER, self).__init__(image_name_file)
         self.dataset_path = dataset_path
@@ -68,20 +68,45 @@ class WIDER(DataBase):
         label_info = label_info.strip().split(' ')
         image_name = os.path.join(self.dataset_path, label_info[0])
         boxes = np.array(map(float, label_info[1:]), dtype=np.float32).reshape(-1, 4)
-        return {'image_name': image_name, 'gt_boxes': boxes}
+        return OrderedDict({'image_name': image_name, 'gt_boxes': boxes})
 
     def get_image_name(self, label_info):
         image_name = label_info.strip().split()[0]
         return os.path.join(self.dataset_path, image_name)
 
 
-class CelebA(DataBase):
-    pass
-
-class AFLW(DataBase):
-    pass
-
-class L300WP(DataBase):
+class L300WP(_DataBase):
     # http://www.cbsr.ia.ac.cn/users/xiangyuzhu/projects/3DDFA/main.htm
     # The synthesized large-pose face images from 300W.
+    # Annotation:
+    # image_name tight_rect head_pose landmark
+    # tight_rect(int): x1 y1 x2 y2
+    # head_pose(radian float): pitch(up+) yaw(right+) roll(left+)
+    # landmark(int): eyes corner, nose, mouth cornet index [36, 39, 42, 45, 30, 48, 54]
+    def __init__(self, dataset_path, image_name_file, mode):
+        super(L300WP, self).__init__(image_name_file)
+        self.dataset_path = dataset_path
+        self.mode = mode
+
+    def get_keys(self):
+        return ['image_name', 'gt_boxes', 'head_pose', 'landmarks']
+
+    def label_parser(self, label_info):
+        label_info = label_info.strip().split(' ')
+        image_name = os.path.join(self.dataset_path, label_info[0])
+        boxes = np.array(label_info[1:5], dtype=np.int32)
+        head_pose = np.array(label_info[5:8], dtype=np.float32)
+        landmarks = np.array(label_info[8:], dtype=np.int32)
+        return OrderedDict({'image_name': image_name, 'gt_boxes': boxes,
+                            'head_pose': head_pose, 'landmarks': landmarks})
+
+    def get_image_name(self, label_info):
+        image_name = label_info.strip().split()[0]
+        return os.path.join(self.dataset_path, image_name)
+
+
+class CelebA(_DataBase):
+    pass
+
+class AFLW(_DataBase):
     pass
