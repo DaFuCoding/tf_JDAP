@@ -1,6 +1,7 @@
-import os
+import os.path as osp
 import numpy as np
 from collections import OrderedDict
+
 __all__ = ['FDDB', 'WIDER', 'CelebA', 'AFLW', 'L300WP']
 
 
@@ -9,7 +10,7 @@ class _DataBase(object):
         self.label_infos = self.get_labels(image_name_file)
 
     def get_labels(self, image_name_file):
-        if not os.path.exists(image_name_file):
+        if not osp.exists(image_name_file):
             raise ValueError("File is not exist.")
         with open(image_name_file, 'r') as f:
             lines = f.readlines()
@@ -30,13 +31,13 @@ class FDDB(_DataBase):
         image_name = info[0]
         if '.jpg' not in image_name:
             image_name += '.jpg'
-        return os.path.join(self.dataset_path, image_name)
+        return osp.join(self.dataset_path, image_name)
 
     def get_image_name(self, label_info, Full=1):
         image_name = label_info.strip().split()[0]
         if '.jpg' not in image_name:
             image_name += '.jpg'
-        return os.path.join(self.dataset_path, image_name)
+        return osp.join(self.dataset_path, image_name)
 
     def do_eval(self, image_name, results):
         #pure_image_name = os.path.splitext(image_name.split(self.dataset_path)[-1][1:])
@@ -58,21 +59,33 @@ class FDDB(_DataBase):
 
 
 class WIDER(_DataBase):
-    def __init__(self, dataset_path, image_name_file, mode):
+    def __init__(self, mode):
+        # User custom
+        dataset_root_path = '/home/dafu/data/WIDER_FACE'
+        if mode == 'train':
+            image_name_file = 'wider_face_split/wider_train_annotation.txt'
+            image_dir_name = 'WIDER_train/images'
+        elif mode == 'val':
+            image_name_file = 'wider_face_split/wider_val_annotation.txt'
+            image_dir_name = 'WIDER_val/images'
+        else:
+            raise Exception("mode use 'train' or 'val'.")
+        image_name_file = osp.join(dataset_root_path, image_name_file)
         super(WIDER, self).__init__(image_name_file)
-        self.dataset_path = dataset_path
+        self.dataset_image_path = osp.join(dataset_root_path, image_dir_name)
         self.mode = mode
+
 
     # TODO: parser regular
     def label_parser(self, label_info):
         label_info = label_info.strip().split(' ')
-        image_name = os.path.join(self.dataset_path, label_info[0])
+        image_name = osp.join(self.dataset_image_path, label_info[0])
         boxes = np.array(map(float, label_info[1:]), dtype=np.float32).reshape(-1, 4)
         return OrderedDict({'image_name': image_name, 'gt_boxes': boxes})
 
     def get_image_name(self, label_info):
         image_name = label_info.strip().split()[0]
-        return os.path.join(self.dataset_path, image_name)
+        return osp.join(self.dataset_image_path, image_name)
 
 
 class L300WP(_DataBase):
@@ -93,7 +106,7 @@ class L300WP(_DataBase):
 
     def label_parser(self, label_info):
         label_info = label_info.strip().split(' ')
-        image_name = os.path.join(self.dataset_path, label_info[0])
+        image_name = osp.join(self.dataset_path, label_info[0])
         boxes = np.array(label_info[1:5], dtype=np.int32)
         head_pose = np.array(label_info[5:8], dtype=np.float32)
         landmarks = np.array(label_info[8:], dtype=np.int32)
@@ -102,7 +115,7 @@ class L300WP(_DataBase):
 
     def get_image_name(self, label_info):
         image_name = label_info.strip().split()[0]
-        return os.path.join(self.dataset_path, image_name)
+        return osp.join(self.dataset_path, image_name)
 
 
 class CelebA(_DataBase):

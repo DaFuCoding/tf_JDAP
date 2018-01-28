@@ -7,7 +7,7 @@ import numpy as np
 from operator import itemgetter, attrgetter
 
 # Ground Truth landmark points number
-LANDMARK_POINTS = 7
+LANDMARK_POINTS = 68
 SAMPLE_PER_IMAGE = 3
 IOU_THRESH = 0.65
 MAX_MEMORY = 3000 * 4000
@@ -144,18 +144,27 @@ def aflw_test_net_save(dataset_path, annotation_file, output_file, mtcnn_detecto
             cv2.imshow("a", image)
             cv2.waitKey(0)
 
+def convert_to_wider_face(gt_box, scale):
+    w = gt_box[2] - gt_box[0] + 1
+    h = gt_box[3] - gt_box[1] + 1
+    gt_box[1] -= max(w, h) * scale
+    return gt_box
 
 def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
     attrib_names = dataset_indicator.get_keys()
     patch_id = 0
-    fout = open(output_file, 'w')
+    image_idx = 0
+    if vis is False:
+        fout = open(output_file, 'w')
     for label_info in dataset_indicator.label_infos:
+        image_idx += 1
         data_dict = dataset_indicator.label_parser(label_info)
         image_name = data_dict[attrib_names[0]]
         gt_box = data_dict[attrib_names[1]]
+        gt_box = convert_to_wider_face(gt_box, 0.2)
         head_pose = data_dict[attrib_names[2]]
         gt_landmarks = data_dict[attrib_names[3]]
-
+        print(image_name)
         image = cv2.imread(image_name)
         image_height, image_width, _ = image.shape
         # Avoid GPU memory broken
@@ -165,13 +174,14 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
         bbox_c = detector.detect(image)
         if len(bbox_c) == 0 or len(gt_box) == 0:
             continue
-        ious = IoU(gt_box, bbox_c)
-        bbox_c = sorted(bbox_c[ious > IOU_THRESH], key=itemgetter(4), reverse=True)
-        if len(bbox_c) == 0:
-            continue
-        bbox_c = np.array(bbox_c[:SAMPLE_PER_IMAGE])
         boxes_square = convert_to_square(bbox_c)
         boxes_square[:, 0:4] = np.round(boxes_square[:, 0:4])
+        ious = IoU(gt_box, boxes_square)
+        boxes_square = sorted(boxes_square[ious > IOU_THRESH], key=itemgetter(4), reverse=True)
+        if len(boxes_square) == 0:
+            continue
+        boxes_square = np.array(boxes_square[:SAMPLE_PER_IMAGE])
+
         [dy, edy, dx, edx, y, ey, x, ex, tmpw, tmph] = pad(boxes_square, image_width, image_height)
 
         for i, det_box in enumerate(boxes_square):
@@ -181,20 +191,21 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
             box_h = y2 - y1 + 1
             reg_landmark[::2] = (gt_landmarks[::2] - x1) / box_w
             reg_landmark[1::2] = (gt_landmarks[1::2] - y1) / box_h
-            # Crop image patch
-            tmp = np.zeros((tmph[i], tmpw[i], 3), dtype=np.uint8)
-            tmp[dy[i]:edy[i] + 1, dx[i]:edx[i] + 1, :] = image[y[i]:ey[i] + 1, x[i]:ex[i] + 1, :]
-            resized_img = cv2.resize(tmp, (net_size, net_size), interpolation=cv2.INTER_LINEAR)
+            if vis is False:
+                # Crop image patch
+                tmp = np.zeros((tmph[i], tmpw[i], 3), dtype=np.uint8)
+                tmp[dy[i]:edy[i] + 1, dx[i]:edx[i] + 1, :] = image[y[i]:ey[i] + 1, x[i]:ex[i] + 1, :]
+                resized_img = cv2.resize(tmp, (net_size, net_size), interpolation=cv2.INTER_LINEAR)
 
-            # Save cropped image
-            patch_id += 1
-            save_file = os.path.join(save_dir, "attribute/%d.jpg" % patch_id)
-            reg_value = ['%.4f' % t for t in reg_landmark]
-            head_pose_str = ' '.join(['%.4f' % t for t in head_pose])
-            reg_value_str = ' '.join([t for t in reg_value])
-            write_str = ' '.join(["%d/attribute/%d.jpg -4" % (net_size, patch_id), head_pose_str, reg_value_str])
-            fout.write(write_str + '\n')
-            cv2.imwrite(save_file, resized_img)
+                # Save cropped image
+                patch_id += 1
+                save_file = os.path.join(save_dir, "attribute/%d.jpg" % patch_id)
+                reg_value = ['%.4f' % t for t in reg_landmark]
+                head_pose_str = ' '.join(['%.4f' % t for t in head_pose])
+                reg_value_str = ' '.join([t for t in reg_value])
+                write_str = ' '.join(["%d/attribute/%d.jpg -4" % (net_size, patch_id), head_pose_str, reg_value_str])
+                fout.write(write_str + '\n')
+                cv2.imwrite(save_file, resized_img)
 
         # draw detection result
         if vis:
@@ -216,15 +227,17 @@ if __name__ == '__main__':
 
     # Load model and dataset_indicator
     detector = DetectAPI(['../models/pnet/pnet_OHEM_0.7_wo_pooling/pnet',
-                          '../models/mnet/mnet_wider_OHEM_0.7_wop_pnet_add_gt/mnet', ''],
-                         [13, 16, 16], "rnet", [2048, 256, 16], False, [0.6, 0.5, 0.1], 24)
+                          '../models/rnet/rnet_wider_OHEM_0.7_wop_pnet/rnet', ''],
+                         [13, 16, 16], "rnet", [2048, 256, 16], False, [0.4, 0.1, 0.1], 64)
     dataset_name = '300WLP'
     if dataset_name == '300WLP':
         dataset_dir = '/home/dafu/data/300W-LP'
         save_dir = '/home/dafu/data/jdap_data/%d' % net_size
-        output_file = os.path.join(save_dir, '300WLP_attribute.txt')
-        dataset_indicator = L300WP(dataset_dir, os.path.join(dataset_dir, '300WLP_rect_pose_landmark.txt'), 'TRAIN')
-        test_core(detector, dataset_indicator, save_dir, output_file)
+        output_file = os.path.join(save_dir, '300WLP_attribute_test.txt')
+        dataset_indicator = L300WP(dataset_dir, os.path.join(dataset_dir, '300WLP_rect_pose_landmark_68.txt'), 'TRAIN')
+        test_core(detector, dataset_indicator, save_dir, output_file, vis=True)
+
+
     # if stageName == 'landmark':
     #     # Landmark samples
     #     annotation_file = '/home/dafu/data/CelebA/list_landmarks_celeba.txt'

@@ -14,48 +14,11 @@ from prepare_data import stat_tfrecords
 from nets import JDAP_Net
 import train_core
 import re
-
-
-flags = tf.app.flags
-flags.DEFINE_string("gpu_id", "0", "gpu device id.")
-flags.DEFINE_string("logdir", "./logdir/pnet/pnet", "Some visual log information.")
-flags.DEFINE_string("model_prefix", "./models/pnet/pnet_OHEM/pnet", "Checkpoint and model path")
-flags.DEFINE_string("tfrecords_root", "/home/dafu/workspace/FaceDetect/tf_JDAP/tfrecords/pnet", "Train data.")
-flags.DEFINE_integer("tfrecords_num", 4, "Sum of tfrecords.")
-flags.DEFINE_integer("image_size", 12, "Netwrok input")
-flags.DEFINE_integer("frequent", 100, "Show train result in frequent.")
-flags.DEFINE_integer("image_sum", 1031327, "Sum of images in train set.")
-flags.DEFINE_integer("val_image_sum", 271973, "Sum of images in val set.")
-# Hyper parameter
-flags.DEFINE_integer("batch_size", 128, "Batch size in classification task.")
-flags.DEFINE_float("lr", 0.01, "Base learning rate.")
-flags.DEFINE_float("lr_decay_factor", 0.1, "learning rate decay factor.")
-LR_EPOCH = [7, 13]
-flags.DEFINE_integer("end_epoch", 16, "How many epoch training.")
-
-########################################
-# Hard sample mining and Loss Function #
-########################################
-flags.DEFINE_boolean("is_ohem", True, "Whether using ohem in face classification.")
-flags.DEFINE_float("ohem_ratio", 0.7, "")
-flags.DEFINE_string("loss_type", "SF", "SF: SoftmaxWithLoss. FL: Focal loss.")
-flags.DEFINE_float("fl_gamma", 2, "")
-flags.DEFINE_boolean("fl_balance", False, "Whether using alpha balance positive and negative.")
-flags.DEFINE_float("fl_alpha", 0.25, "")
-flags.DEFINE_boolean("is_ERC", True, "Using early rejecting classifier.")
-flags.DEFINE_float("ERC_thresh", 0.01, "ERC thresh.")
-######################
-# Optimization Flags #
-######################
-flags.DEFINE_string("optimizer", "adam", "Optimization strategy.")
-flags.DEFINE_float("adam_beta1", 0.9, "")
-flags.DEFINE_float("adam_beta2", 0.999, "")
-flags.DEFINE_float("adam_epsilon", 1e-8, "")
-flags.DEFINE_float("momentum", 0.9, "A `Tensor` or a floating point value.  The momentum.")
-
-# Logging parameter
-flags.DEFINE_boolean("is_feature_visual", True, "Output feature map per frequent")
+import hp_config
+flags = hp_config.flags
 FLAGS = flags.FLAGS
+
+LR_EPOCH = [7, 13]
 
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', FLAGS.gpu_id)
 
@@ -132,6 +95,7 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
         # Save feature map parameters
         if FLAGS.is_feature_visual:
             for feature_name, feature_val in end_points.items():
+                print(feature_name)
                 tf.summary.histogram(feature_name, feature_val)
 
         #########################################
@@ -190,8 +154,7 @@ def train_net(net_factory, model_prefix, logdir, end_epoch, net_size, tfrecords,
                 val_cls_prob = []
                 val_bbox_error = []
                 for step in range(n_step_val):
-                    val_prob = sess.run(eval_cls_op)
-                    val_bbox = sess.run(eval_bbox_pred_op)
+                    val_prob, val_bbox = sess.run([eval_cls_op, eval_bbox_pred_op])
                     val_cls_prob.append(val_prob)
                     val_bbox_error.append(val_bbox)
                 print("Epoch: %d, cls accuracy: %4f" % (cur_epoch, np.mean(val_cls_prob)))
@@ -207,18 +170,20 @@ def main(_):
 
     if FLAGS.image_size == 12:
         #net_factory = JDAP_Net.JDAP_12Net
-        #net_factory = JDAP_Net.JDAP_12Net_wo_pooling
-        net_factory = JDAP_Net.JDAP_12Net_wop_relu6
+        net_factory = JDAP_Net.JDAP_12Net_wo_pooling
+        #net_factory = JDAP_Net.JDAP_12Net_wop_relu6
     elif FLAGS.image_size == 18:
         net_factory = JDAP_Net.JDAP_mNet
     elif FLAGS.image_size == 24:
         if FLAGS.is_ERC:
             net_factory = JDAP_Net.JDAP_24Net_ERC
         else:
-            net_factory = JDAP_Net.JDAP_24Net
-            #net_factory = JDAP_Net.JDAP_24Net_wo_pooling
+            #net_factory = JDAP_Net.JDAP_24Net
+            #net_factory = JDAP_Net.JDAP_24Net_wop
+            net_factory = JDAP_Net.JDAP_mNet_normal
     elif FLAGS.image_size == 48:
         net_factory = JDAP_Net.JDAP_48Net
+        #net_factory = JDAP_Net.JDAP_aNet_Cls
 
     ''' TFRecords input'''
     cls_tfrecords = []
@@ -226,17 +191,18 @@ def main(_):
     tfrecords_num = FLAGS.tfrecords_num
     tfrecords_root = FLAGS.tfrecords_root
     for i in range(tfrecords_num):
-        print(tfrecords_root + "_wop_add_gt-%.5d-of-0000%d" % (i, tfrecords_num))
-        cls_tfrecords.append(tfrecords_root + "_wop_add_gt-%.5d-of-0000%d" % (i, tfrecords_num))
+        print(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
+        cls_tfrecords.append(tfrecords_root + "-%.5d-of-0000%d" % (i, tfrecords_num))
     print(cls_tfrecords)
-    for i in range(tfrecords_num):
-        print(tfrecords_root + "_wop_val-%.5d-of-0000%d" % (i, tfrecords_num))
-        val_tfrecords.append(tfrecords_root + "_wop_val-%.5d-of-0000%d" % (i, tfrecords_num))
-#FLAGS.image_size
+    # for i in range(tfrecords_num):
+    #     print(tfrecords_root + "_val-%.5d-of-0000%d" % (i, tfrecords_num))
+    #     val_tfrecords.append(tfrecords_root + "_val-%.5d-of-0000%d" % (i, tfrecords_num))
+
     train_net(net_factory=net_factory, model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
-              end_epoch=FLAGS.end_epoch, net_size=24, tfrecords=cls_tfrecords,
-              val_tfrecords=[], frequent=FLAGS.frequent)
+              end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
+              val_tfrecords=val_tfrecords, frequent=FLAGS.frequent)
 
 
 if __name__ == '__main__':
+
     tf.app.run()

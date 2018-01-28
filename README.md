@@ -13,7 +13,7 @@ Quick overview of requirements:
 
 ### Preparation Data
 	- WIDER-FACE
-	- 300W-LP
+	- 300W-LP + Menpo-3D or (CelebA + AFLW)
 
 ### Data Label Design
 
@@ -75,10 +75,11 @@ Select model file and suitable hyper parameters
 	- SF is more less false positive and higher recall than FL.
 9. ERC(Early recject classifier) and DR Layer
 	- New strategy in [2], but increase more parameters.
-10. 
 
-### Conclusion
-1. PNet use conv1-s2 replace max pooling and small batch size
+### Future work
+1. PNet use conv1-s2 replace max pooling and relu6 replace prelu. But relu6 and reduce max pooling method lead
+to more false positive ratio and lower recall.
+
 
 
 ### References

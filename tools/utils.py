@@ -1,4 +1,4 @@
-#__all__ = ['py_nms', 'generate_bbox', 'resize_image_by_wh', 'calc_scale']
+#__all__ = ['opj', 'py_nms', 'generate_bbox', 'resize_image_by_wh', 'calc_scale']
 import os
 import cv2
 import numpy as np
@@ -10,6 +10,9 @@ if sys.version_info[0] == 2:
 elif sys.version_info[0] == 3:
     import queue
     import cPickle
+
+# short path join
+opj = lambda x, y: os.path.join(x, y)
 
 
 def IoU(box, boxes):
@@ -52,7 +55,7 @@ def convert_to_square(bbox):
 
     h = bbox[:, 3] - bbox[:, 1] + 1
     w = bbox[:, 2] - bbox[:, 0] + 1
-    max_side = np.maximum(h,w)
+    max_side = np.maximum(h, w)
     square_bbox[:, 0] = bbox[:, 0] + w*0.5 - max_side*0.5
     square_bbox[:, 1] = bbox[:, 1] + h*0.5 - max_side*0.5
     square_bbox[:, 2] = square_bbox[:, 0] + max_side - 1
@@ -190,7 +193,7 @@ def resize_image_by_wh(img, tuple_wh):
     Returns:
         Normalization image by tuple_wh
     """
-    img_resized = cv2.resize(img, tuple_wh, interpolation=cv2.INTER_LINEAR)      # resized image
+    img_resized = cv2.resize(img, tuple_wh, interpolation=cv2.INTER_AREA)      # resized image
     img_resized = (img_resized - 127.5) * 0.0078125
     return img_resized
 
@@ -275,87 +278,4 @@ def calibrate_box(bbox, reg):
     return bbox_c
 
 
-def detect_save_pickle(detector, dataset_indicator, pickle_name):
-    count = 0
-    detections = list()  # detect result
-    for label_info in dataset_indicator.label_infos:
-        # Interactive information
-        if count % 100 == 0:
-            print("Handle image %d " % count)
-        count += 1
-        image_name = dataset_indicator.get_image_name(label_info)
-        image = cv2.imread(image_name)
-        cal_boxes = detector.detect(image)
-        detections.append(cal_boxes)
 
-    #save_path = os.path.join(data_dir, str(net_size))
-    #save_file = os.path.join(save_path, pickle_name)
-    with open(pickle_name, 'wb') as f:
-        cPickle.dump(detections, f, cPickle.HIGHEST_PROTOCOL)
-
-
-class DataPretreat(object):
-    """
-        Data color augment, reference to Caffe2 "image_input_op.h"
-    """
-    def __init__(self):
-        # Resize method
-        self.resize_method = [cv2.INTER_AREA, cv2.INTER_CUBIC, cv2.INTER_LINEAR]
-        # Data color augment parameter
-        self.saturation = 0.4
-        self.brightness = 0.4
-        self.contrast = 0.4
-
-    @property
-    def random_resize_method(self):
-        #select_method = npr.random(3).argmax()
-        #return self.resize_method[select_method]
-        return self.resize_method[2]
-
-    def uchar_protect(self, array):
-        over_idx = np.where(array > 255)
-        low_idx = np.where(array < 0)
-        array[over_idx] = 255
-        array[low_idx] = 0
-        return array
-
-    def to_grey(self, image):
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        image = image[:, :, np.newaxis]
-        image = np.repeat(image, 3, axis=2)
-        return image
-
-    def Brightness(self, image, alpha_rand=0.4):
-        alpha = 1.0 + npr.uniform(-alpha_rand, alpha_rand)
-        image = self.uchar_protect(image * alpha)
-        return image.astype(np.uint8)
-
-
-    def Contrast(self, image, alpha_rand=0.4):
-        h, w, c = image.shape
-        gray_mean = np.sum(0.114 * image[:, :, 0] + 0.587 * image[:, :, 1] + 0.299 * image[:, :, 2])
-        gray_mean /= h * w
-        alpha = 1.0 + npr.uniform(-alpha_rand, alpha_rand)
-        image = self.uchar_protect(image * alpha + gray_mean * (1.0 - alpha))
-        return image.astype(np.uint8)
-
-
-    def Saturation(self, image, alpha_rand=0.4):
-        alpha = 1.0 + npr.uniform(-alpha_rand, alpha_rand)
-        gray_color = 0.114 * image[:, :, 0] + 0.587 * image[:, :, 1] + 0.299 * image[:, :, 2]
-        gray_color = gray_color[:, :, np.newaxis]
-        gray_color = np.repeat(gray_color, 3, axis=2)
-        image = self.uchar_protect(image * alpha + gray_color * (1.0 - alpha))
-        return image.astype(np.uint8)
-
-    def ColorJitter(self, image, saturation=0.4, brightness=0.4, contrast=0.4):
-        jitter_order = [0, 1, 2]
-        npr.shuffle(jitter_order)
-        for i in range(3):
-            if jitter_order[i] == 0:
-                image = self.Saturation(image, saturation)
-            elif jitter_order[i] == 1:
-                image = self.Brightness(image, brightness)
-            else:
-                image = self.Contrast(image, contrast)
-        return image

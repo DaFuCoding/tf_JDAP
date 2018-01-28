@@ -6,15 +6,37 @@ import numpy as np
 import numpy.random as npr
 import argparse
 import os
+import os.path as osp
 import sys
 
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '0')
 
 # Set yourself fold root
 net_size = 48
-wider_root_path = '/home/dafu/data/WIDER_FACE'
-data_dir = '/home/dafu/data/jdap_data'
-add_dir_name = 'mnet_'  # default is ''
+data_dir = '/home/dafu/data/jdap_data/%d' % net_size
+add_dir_name = ''  # default is ''
+
+
+def detect_save_pickle(detector, dataset_indicator, pickle_name):
+    count = 0
+    detections = list()  # detect result
+    fin = open(pickle_name, 'w')
+    if not osp.exists(pickle_name):
+        raise Exception("pickle file not exist.")
+    fin.close()
+
+    for label_info in dataset_indicator.label_infos:
+        # Interactive information
+        if count % 100 == 0:
+            print("Handle image %d " % count)
+        count += 1
+        image_name = dataset_indicator.get_image_name(label_info)
+        image = cv2.imread(image_name)
+        cal_boxes = detector.detect(image)
+        detections.append(cal_boxes)
+
+    with open(pickle_name, 'wb') as f:
+        cPickle.dump(detections, f, cPickle.HIGHEST_PROTOCOL)
 
 
 def save_hard_example(dataset_indicator, pickle_name):
@@ -25,11 +47,11 @@ def save_hard_example(dataset_indicator, pickle_name):
     num_of_images = len(annotations)
     print ("processing %d images in total" % num_of_images)
 
-    save_path = os.path.join(data_dir, "%d" % net_size)
+    save_path = data_dir
     mode = dataset_indicator.mode
-    neg_save_dir = os.path.join(data_dir, "%d/%s_%snegative" % (net_size, mode, add_dir_name))
-    pos_save_dir = os.path.join(data_dir, "%d/%s_%spositive" % (net_size, mode, add_dir_name))
-    part_save_dir = os.path.join(data_dir, "%d/%s_%spart" % (net_size, mode, add_dir_name))
+    neg_save_dir = os.path.join(data_dir, "%s_%snegative" % (mode, add_dir_name))
+    pos_save_dir = os.path.join(data_dir, "%s_%spositive" % (mode, add_dir_name))
+    part_save_dir = os.path.join(data_dir, "%s_%spart" % (mode, add_dir_name))
     for dir_path in [neg_save_dir, pos_save_dir, part_save_dir]:
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
@@ -81,10 +103,7 @@ def save_hard_example(dataset_indicator, pickle_name):
             if np.max(iou) < 0.3:
                 # Sampling select very hard samples
                 if net_size == 24 or net_size == 18:
-                    if npr.rand(1) > 0.3 or box[4] < 0.8:
-                        continue
-                if net_size == 48:
-                    if npr.rand(1) > 0.7 or box[4] < 0.3:
+                    if npr.rand(1) > 0.3 or box[4] < 0.6:
                         continue
                 save_file = os.path.join(neg_save_dir, "%d.jpg" % n_idx)
                 fneg.write("%d/%s_%snegative/%d.jpg" %
@@ -128,7 +147,7 @@ def save_gt_sample(dataset_indicator):
     print ("processing %d images in total" % num_of_images)
     idx = 0
     p_idx = 0
-    save_path = os.path.join(data_dir, "%d" % net_size)
+    save_path = data_dir
     pos_save_dir = os.path.join(save_path, "train_gt_positive")
     if not os.path.exists(pos_save_dir):
         os.mkdir(pos_save_dir)
@@ -177,10 +196,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Generate hard train and verify data.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
-                        default='rnet', type=str)
+                        default='pnet', type=str)
     parser.add_argument('--prefix', dest='prefix', help='prefix of model name', nargs="+",
                         default=['../models/pnet/pnet_OHEM_0.7_wo_pooling/pnet',
-                                 '../models/mnet/mnet_wider_OHEM_0.7_wop_pnet_add_gt/mnet',
+                                 '../models/rnet/rnet_wider_OHEM_0.7_wop_pnet/rnet',
                                  ''],
                         type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
@@ -190,7 +209,7 @@ def parse_args():
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
                         default=[0.4, 0.1, 0.7], type=float)
     parser.add_argument('--min_face', dest='min_face', help='minimum face size for detection',
-                        default=24, type=int)
+                        default=48, type=int)
     args = parser.parse_args()
     return args
 
@@ -199,27 +218,21 @@ if __name__ == '__main__':
     args = parse_args()
     print ('Called with argument:')
     print (args)
-    wider_face_train_path = os.path.join(wider_root_path, 'WIDER_train/images')
-    wider_face_val_path = os.path.join(wider_root_path, 'WIDER_val/images')
-    train_annotation_file = os.path.join(wider_root_path, 'wider_face_split/wider_train_annotation.txt')
-    val_annotation_file = os.path.join(wider_root_path, 'wider_face_split/wider_val_annotation.txt')
-    train_dataset_indicator = WIDER(wider_face_train_path, train_annotation_file, 'train')
-    val_dataset_indicator = WIDER(wider_face_val_path, val_annotation_file, 'val')
+    train_dataset_indicator = WIDER('train')
+    val_dataset_indicator = WIDER('val')
 
-    stage = 2
-    train_pickle_name = os.path.join(os.path.join(data_dir, str(net_size), 'cands_train_%s%d_0.4_0.1.pkl' % (add_dir_name, net_size)))
-    val_pickle_name = os.path.join(os.path.join(data_dir, str(net_size), 'cands_val_%s%d_0.4.pkl' % (add_dir_name, net_size)))
+    stage = 0
+    train_pickle_name = osp.join(osp.join(data_dir, 'cands_train_%s%d_0.4_0.1.pkl' % (add_dir_name, net_size)))
+    val_pickle_name = osp.join(osp.join(data_dir, 'cands_val_%s%d_0.4_0.1.pkl' % (add_dir_name, net_size)))
     if stage == 1:
         # Load model and dataset_indicator
         detector = DetectAPI(args.prefix, args.epoch, args.test_mode, args.batch_size, False, args.thresh, args.min_face)
         # 1. Detect and save pickle
         detect_save_pickle(detector, train_dataset_indicator, train_pickle_name)
-        #save_pickle(detector, val_dataset_indicator, val_pickle_name)
+        detect_save_pickle(detector, val_dataset_indicator, val_pickle_name)
 
     elif stage == 2:
-        pass
         # 2. Crop and save face samples by pickle file
-        #save_gt_sample(train_dataset_indicator)
         save_hard_example(train_dataset_indicator, train_pickle_name)
-        #save_hard_example(val_dataset_indicator, val_pickle_name)
+        save_hard_example(val_dataset_indicator, val_pickle_name)
 

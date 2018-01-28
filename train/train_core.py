@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 import tensorflow as tf
-from configs.config import config
+from configs.cfg import config
 
 FLAGS = tf.flags.FLAGS
 
@@ -53,7 +53,7 @@ def task_add_weight(cls_loss_op, bbox_loss_op, landmark_loss_op=None, pose_loss_
     """
     cls_loss_op = cls_loss_op * 1.0
     if landmark_loss_op is not None and pose_loss_op is not None:
-        return cls_loss_op + bbox_loss_op * 1.0 + landmark_loss_op * 1.0 + pose_loss_op * 1.0
+        return cls_loss_op + bbox_loss_op * 1.0 + landmark_loss_op * 0.1 + pose_loss_op * 1.0
     elif landmark_loss_op is not None:
         return cls_loss_op + bbox_loss_op * 1.0 + landmark_loss_op * 1.0
     elif pose_loss_op is not None:
@@ -65,6 +65,6 @@ def compute_accuracy(cls_prob, reg_prob, gt_cls_label, gt_reg_label):
     # Only compute classify
     label = tf.cast(gt_cls_label, tf.float32)
     pred = tf.cast(tf.floor(cls_prob[:, 1] + 0.5), tf.float32)
-    cls_accuracy = tf.reduce_mean(tf.square(pred - label))
+    cls_accuracy = 1 - tf.reduce_mean(tf.square(pred - label))
     bbox_square_error = tf.reduce_mean(tf.square(reg_prob - gt_reg_label), axis=0)
     return cls_accuracy, bbox_square_error

@@ -1,6 +1,7 @@
 import time
 from tools.utils import *
-
+import tensorflow as tf
+FLAGS = tf.app.flags.FLAGS
 
 class JDAPDetector(object):
     def __init__(self,
@@ -115,7 +116,8 @@ class JDAPDetector(object):
             cls_scores, reg, reserve_mask = self.rnet_detector.predict(cropped_ims)
         else:
             cls_scores, reg = self.rnet_detector.predict(cropped_ims)
-
+        if len(cls_scores) == 0:
+            return None
         keep_inds = np.where(cls_scores[:, 1] > self.thresh[1])
         if len(keep_inds) == 0:
             return None
@@ -159,20 +161,30 @@ class JDAPDetector(object):
         if aux_idx == 0:
             cls_scores, bbox_reg = self.onet_detector.predict(cropped_ims)
         elif aux_idx == 1:  # Landmark
-            pass
+            cls_scores, bbox_reg, land_reg = self.onet_detector.predict(cropped_ims)
         elif aux_idx == 2:  # Head pose
-            pass
+            cls_scores, bbox_reg, pose_reg = self.onet_detector.predict(cropped_ims)
         elif aux_idx == 3:  # Landmark and Head pose
-            cls_scores, bbox_reg, land_reg, pose_reg = self.onet_detector.predict(cropped_ims)
-
+            cls_scores, bbox_reg, pose_reg, land_reg = self.onet_detector.predict(cropped_ims)
+        if len(cls_scores) == 0:
+            return None, None, None
         keep_inds = np.where(cls_scores[:, 1] > self.thresh[2])
         if len(keep_inds) > 0:
             boxes = dets[keep_inds]
             boxes[:, 4] = cls_scores[:, 1][keep_inds]
             bbox_reg = bbox_reg[keep_inds]
+            if aux_idx == 3:
+                land_reg = land_reg[keep_inds]
+                pose_reg = pose_reg[keep_inds]
+            elif aux_idx == 1:
+                land_reg = land_reg[keep_inds]
+            elif aux_idx == 2:
+                pose_reg = pose_reg[keep_inds]
         else:
             if aux_idx == 3:
                 return None, None, None
+            elif aux_idx != 0:
+                return None, None
             return None
 
         boxes_c = calibrate_box(boxes, bbox_reg)
@@ -180,20 +192,31 @@ class JDAPDetector(object):
         keep = py_nms(boxes_c, 0.7, "Minimum")
         boxes_c = boxes_c[keep]
 
+        boxes = boxes[keep]
+        side_w = boxes[:, 2] - boxes[:, 0] + 1
+        side_h = boxes[:, 3] - boxes[:, 1] + 1
         if aux_idx == 3:
-            boxes = boxes[keep]
             land_reg = land_reg[keep]
-            land_reg = np.reshape(land_reg, [-1, 5, 2])
-            side_w = boxes[:, 2] - boxes[:, 0]
-            side_h = boxes[:, 3] - boxes[:, 1]
+            land_reg = np.reshape(land_reg, [-1, FLAGS.landmark_num, 2])
             # Point format transfer to [x x x x x y y y y y]
             land_point = np.transpose(
                 np.vstack((boxes[:, 0] + land_reg[:, :, 0].T * side_w,
                            boxes[:, 1] + land_reg[:, :, 1].T * side_h))
             )
             pose_reg = pose_reg[keep]
-            return boxes_c, land_point, pose_reg
-
+            return boxes_c, pose_reg, land_point
+        elif aux_idx == 1:
+            land_reg = land_reg[keep]
+            land_reg = np.reshape(land_reg, [-1, FLAGS.landmark_num, 2])
+            # Point format transfer to [x x x x x y y y y y]
+            land_point = np.transpose(
+                np.vstack((boxes[:, 0] + land_reg[:, :, 0].T * side_w,
+                           boxes[:, 1] + land_reg[:, :, 1].T * side_h))
+            )
+            return boxes_c, land_point
+        elif aux_idx == 2:
+            pose_reg = pose_reg[keep]
+            return boxes_c, pose_reg
         return boxes_c
 
     def detect(self, img, aux_idx=0):
@@ -231,8 +254,18 @@ class JDAPDetector(object):
             elif aux_idx == 3:
                 if boxes_c is None:
                     return np.array([]), np.array([]), np.array([])
-                boxes_c, land_point, head_pose = self.detect_onet(img, boxes_c, aux_idx)
-                return boxes_c, land_point, head_pose
+                boxes_c, head_pose, land_point = self.detect_onet(img, boxes_c, aux_idx)
+                return boxes_c, head_pose, land_point
+            elif aux_idx == 2:
+                if boxes_c is None:
+                    return np.array([]), np.array([])
+                boxes_c, head_pose = self.detect_onet(img, boxes_c, aux_idx)
+                return boxes_c, head_pose
+            elif aux_idx == 1:
+                if boxes_c is None:
+                    return np.array([]), np.array([])
+                boxes_c, land_point = self.detect_onet(img, boxes_c, aux_idx)
+                return boxes_c, land_point
             else:
                 raise NotImplementedError("Not support aux_idx.")
 

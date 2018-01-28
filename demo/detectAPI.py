@@ -6,13 +6,19 @@ import cv2
 
 from nets.JDAP_Net import JDAP_12Net_wo_pooling as P_Net
 from nets.JDAP_Net import JDAP_24Net as R_Net
-from nets.JDAP_Net import JDAP_mNet as M_Net
+from nets.JDAP_Net import JDAP_mNet_normal as M_Net
 from nets.JDAP_Net import JDAP_24Net_ERC as R_Net_ERC
 from nets.JDAP_Net import JDAP_48Net as O_Net
-from nets.JDAP_Net import JDAP_48Net_Lanmark_Pose as O_AUX_Net
+from nets.JDAP_Net import JDAP_48Net_Landmark
+from nets.JDAP_Net import JDAP_48Net_Pose
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose as O_AUX_Net
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Refine
+from nets.JDAP_Net import JDAP_aNet as A_Net
+from nets.JDAP_Net import JDAP_aNet_Cls as A_Cls_Net
 from fcn_detector import FcnDetector
 from jdap_detect import JDAPDetector
 from detector import Detector
+import tensorflow as tf
 
 
 class DetectAPI(object):
@@ -41,16 +47,25 @@ class DetectAPI(object):
                 self.aux_idx = 4
                 RNet = Detector(R_Net_ERC, 24, batch_size[1], model_path[1], self.aux_idx)
             else:
-                RNet = Detector(M_Net, 18, batch_size[1], model_path[1])
-                #RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
+                #RNet = Detector(M_Net, 18, batch_size[1], model_path[1])
+                RNet = Detector(R_Net, 24, batch_size[1], model_path[1])
             detectors[1] = RNet
 
         # load onet model
         if "onet" in test_mode:
             if 'landmark_pose' in test_mode:
                 self.aux_idx = 3
-                ONet = Detector(O_AUX_Net, 48, batch_size[2], model_path[2], self.aux_idx)
+                ONet = Detector(JDAP_48Net_Landmark_Pose_Refine, 48, batch_size[2], model_path[2], self.aux_idx)
+                #ONet = Detector(O_AUX_Net, 48, batch_size[2], model_path[2], self.aux_idx)
+                #ONet = Detector(A_Net, 36, batch_size[2], model_path[2], self.aux_idx)
+            elif 'landmark' in test_mode:
+                self.aux_idx = 1
+                ONet = Detector(JDAP_48Net_Landmark, 48, batch_size[2], model_path[2], self.aux_idx)
+            elif 'pose' in test_mode:
+                self.aux_idx = 2
+                ONet = Detector(JDAP_48Net_Pose, 48, batch_size[2], model_path[2], self.aux_idx)
             else:
+                #ONet = Detector(A_Cls_Net, 36, batch_size[2], model_path[2])
                 ONet = Detector(O_Net, 48, batch_size[2], model_path[2])
 
             detectors[2] = ONet
@@ -58,7 +73,7 @@ class DetectAPI(object):
         jdap_detector = JDAPDetector(detectors=detectors, is_ERC=False, min_face_size=min_face_size, threshold=thresh)
         return jdap_detector
 
-    def show_result(self, image, results):
+    def show_result(self, image, results, save_name=''):
         cal_boxes = results[0] if type(results) is tuple else results
         box_num = cal_boxes.shape[0]
 
@@ -67,39 +82,44 @@ class DetectAPI(object):
             bbox = cal_boxes[i, :4]
             score = cal_boxes[i, 4]
             self.draw_rectangle(image, bbox)
-            self.draw_text(image, bbox, score)
+            #self.draw_text(image, bbox, score)
+            # Head pose
+            if self.aux_idx == 3 or self.aux_idx == 2:
+                head_pose = results[1][i] * 180 / 3.14
+                self.draw_text(image, bbox, head_pose)
 
             # Face landmark
             if self.aux_idx == 3 or self.aux_idx == 1:
-                land_point = np.round(results[1][i]).astype(dtype=np.int32)
-                self.draw_point(image, land_point, 5)
+                land_point = np.round(results[-1][i]).astype(dtype=np.int32)
+                self.draw_point(image, land_point, tf.app.flags.FLAGS.landmark_num)
                 # point_x = int(land_reg[i][land_id * 2] * proposal_side + src_boxes[i][0])
                 # point_y = int(land_reg[i][land_id * 2 + 1] * proposal_side + src_boxes[i][1])
                 # for p in range(5):
                 #     cv2.circle(image, (land_point[p], land_point[5+p]), 2, (200, 0, 0), 2)
-
-            # Head pose
-            if self.aux_idx == 3 or self.aux_idx == 2:
-                head_pose = results[2][i] * 180 / 3.14
-                self.draw_text(image, bbox, head_pose)
-
-        cv2.imshow("show result", image)
-        cv2.waitKey(0)
+        if save_name != '':
+            cv2.imwrite(save_name, image)
+        else:
+            cv2.imshow("show result", image)
+            cv2.waitKey(0)
 
     def draw_rectangle(self, image, rect, color=(0, 0, 200)):
         rect = [int(x) for x in rect]
         cv2.rectangle(image, (rect[0], rect[1]), (rect[2], rect[3]), color, 2)
 
-    def draw_point(self, image, points, point_num, color=(200, 0, 0)):
+    def draw_point(self, image, points, point_num, color=(255, 255, 255)):
         for p in range(point_num):
-            cv2.circle(image, (points[p], points[5 + p]), 2, color, 2)
+            if p < 17:
+                cv2.circle(image, (points[p], points[point_num + p]), 1, color, 2)
+            else:
+                cv2.circle(image, (points[p], points[point_num + p]), 1, (0, 200, 0), 2)
 
     def draw_text(self, image, rect, text, color=(200, 0, 200)):
         rect = [int(x) for x in rect]
         if len(text.shape):
-            s = ' '.join([str('%.2f' % x) for x in text])
+            s = ' '.join([str('%.1f' % x) for x in text])
             # Draw top left
-            cv2.putText(image, s, (rect[0], rect[1]), 1, 1, color, 2)
+            cv2.putText(image, s, (rect[0], rect[1] + 15), 1, 0.9, (0, 255, 0), 2)
+
         else:
             s = str('%.4f' % text)
             # Draw center

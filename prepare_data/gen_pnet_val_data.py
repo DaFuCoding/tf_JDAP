@@ -10,7 +10,7 @@ import sys
 import os.path as osp
 sys.path.append(osp.join('.'))
 from tools.utils import *
-
+from organize_data import DataPretreat
 
 # PNet config
 config = edict()
