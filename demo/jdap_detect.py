@@ -3,6 +3,7 @@ from tools.utils import *
 import tensorflow as tf
 FLAGS = tf.app.flags.FLAGS
 
+
 class JDAPDetector(object):
     def __init__(self,
                  detectors,
@@ -167,7 +168,12 @@ class JDAPDetector(object):
         elif aux_idx == 3:  # Landmark and Head pose
             cls_scores, bbox_reg, pose_reg, land_reg = self.onet_detector.predict(cropped_ims)
         if len(cls_scores) == 0:
-            return None, None, None
+            if aux_idx == 3:
+                return None, None, None
+            elif aux_idx != 0:
+                return None, None
+            return None
+
         keep_inds = np.where(cls_scores[:, 1] > self.thresh[2])
         if len(keep_inds) > 0:
             boxes = dets[keep_inds]

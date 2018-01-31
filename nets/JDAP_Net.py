@@ -13,7 +13,6 @@ __all__ = ['JDAP_12Net', 'JDAP_24Net', 'JDAP_48Net', 'JDAP_48Net_Lanmark',
 import tensorflow as tf
 from configs.cfg import config
 import tensorflow.contrib.slim as slim
-
 FLAGS = tf.flags.FLAGS
 # TF Framework data format default is 'NHWC'
 DATA_FORMAT = 'NHWC'
@@ -565,6 +564,50 @@ def JDAP_48Net(inputs, label=None, bbox_target=None, is_training=True, mode='TRA
                 return cls_prob, bbox_pred, end_points
 
 
+def JDAP_48Net_GAN_Occlusion(inputs, gan_inputs, coor_inputs, label=None, bbox_target=None, is_training=True, mode='TRAIN'):
+    with tf.variable_scope("JDAP_48Net_GAN_Occlusion") as scope:
+        end_points_collection = scope.name + '_end_points'
+        with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            biases_initializer=tf.zeros_initializer(), padding='valid',
+                            outputs_collections=[end_points_collection]):
+            with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
+                                weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=None,
+                                outputs_collections=[end_points_collection]):
+                #tf.image.crop_and_resize()
+                net = slim.conv2d(inputs, 32, kernel_size=3, scope='conv1')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='SAME')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, scope='conv2')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool2')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, scope='conv3')
+                net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool3')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 128, kernel_size=2, scope='conv4')
+                print(net.get_shape())
+
+                net = slim.flatten(net)
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
+
+                cls_prob = slim.fully_connected(net, 2, scope='fc2')
+                bbox_pred = slim.fully_connected(net, 4, scope='fc3')
+            end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+            if is_training:
+                if FLAGS.loss_type == 'SF':
+                    cls_loss = cls_ohem(cls_prob, label)
+                elif FLAGS.loss_type == 'FL':
+                    cls_loss = focal_loss(cls_prob, label, config.FL.gamma, config.FL.alpha)
+                bbox_loss = bbox_ohem(bbox_pred, bbox_target, label)
+                return cls_prob, bbox_pred, cls_loss, bbox_loss, end_points
+            else:
+                cls_prob = tf.nn.softmax(logits=cls_prob)
+                return cls_prob, bbox_pred, end_points
+
+
 def JDAP_48Net_Landmark(inputs, label=None, bbox_target=None, landmark_target=None, is_training=True):
     with tf.variable_scope("JDAP_48Net_Landmark") as scope:
         end_points_collection = scope.name + '_end_points'
@@ -712,9 +755,24 @@ def JDAP_48Net_Landmark_Pose(inputs, label=None, bbox_target=None, landmark_targ
                 return cls_prob, bbox_pred, pose_reg_pred, landmark_pred, end_points
 
 
-def JDAP_48Net_Landmark_Pose_Refine(inputs, label=None, bbox_target=None, landmark_target=None, pose_reg_target=None,
-                                   is_training=True):
-    with tf.variable_scope("JDAP_48Net_Landmark_Pose_Refine") as scope:
+def JDAP_48Net_Landmark_Pose_Mean_Shape(inputs, label=None, bbox_target=None, landmark_target=None, pose_reg_target=None,
+                                        is_training=True):
+    mean_shape = tf.constant([0.2357, 0.3737, 0.2430, 0.4884, 0.2576, 0.5933, 0.2716, 0.6889, 0.2923, 0.7940,
+                              0.3293, 0.8818, 0.3734, 0.9420, 0.4312, 0.9968, 0.5129, 1.0261, 0.5929, 0.9947,
+                              0.6467, 0.9411, 0.6865, 0.8800, 0.7196, 0.7918, 0.7384, 0.6862, 0.7511, 0.5899,
+                              0.7643, 0.4853, 0.7710, 0.3705, 0.3002, 0.2729, 0.3316, 0.2378, 0.3718, 0.2286,
+                              0.4102, 0.2351, 0.4445, 0.2496, 0.5842, 0.2483, 0.6178, 0.2332, 0.6548, 0.2265,
+                              0.6938, 0.2363, 0.7224, 0.2710, 0.5156, 0.3724, 0.5168, 0.4469, 0.5180, 0.5185,
+                              0.5183, 0.5780, 0.4693, 0.6208, 0.4892, 0.6290, 0.5157, 0.6376, 0.5416, 0.6283,
+                              0.5603, 0.6195, 0.3505, 0.3617, 0.3756, 0.3398, 0.4099, 0.3400, 0.4408, 0.3673,
+                              0.4123, 0.3812, 0.3763, 0.3822, 0.5829, 0.3670, 0.6150, 0.3388, 0.6499, 0.3390,
+                              0.6736, 0.3611, 0.6489, 0.3802, 0.6130, 0.3801, 0.4088, 0.7505, 0.4472, 0.7251,
+                              0.4926, 0.7068, 0.5156, 0.7133, 0.5383, 0.7065, 0.5816, 0.7243, 0.6137, 0.7520,
+                              0.5782, 0.7993, 0.5471, 0.8243, 0.5134, 0.8300, 0.4801, 0.8246, 0.4487, 0.7992,
+                              0.4178, 0.7495, 0.4837, 0.7427, 0.5142, 0.7422, 0.5445, 0.7426, 0.6078, 0.7508,
+                              0.5430, 0.7782, 0.5129, 0.7826, 0.4828, 0.7773], dtype=tf.float32)
+
+    with tf.variable_scope("JDAP_48Net_Landmark_Pose_Mean_Shape") as scope:
         end_points_collection = scope.name + '_end_points'
         with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
                             activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
@@ -734,26 +792,136 @@ def JDAP_48Net_Landmark_Pose_Refine(inputs, label=None, bbox_target=None, landma
                 net = slim.conv2d(net, 64, kernel_size=3, scope='conv3')
                 net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool3')
                 print(net.get_shape())
-                refine_net = slim.conv2d(net, 32, kernel_size=1, scope='refine_conv3_1')
+
                 net = slim.conv2d(net, 128, kernel_size=2, scope='conv4')
                 print(net.get_shape())
 
                 net = slim.flatten(net)
-                refine_net = slim.flatten(refine_net)
                 net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
-                refine_net = slim.fully_connected(refine_net, 128, activation_fn=_prelu, scope='refine_fc1')
                 print(net.get_shape())
 
                 cls_prob = slim.fully_connected(net, 2, scope='fc2')
                 bbox_pred = slim.fully_connected(net, 4, scope='fc3')
                 # Add Landmark and Pose task
-                # landmark_pred = slim.fully_connected(net, FLAGS.LANDMARK_NUM, scope='landmark')
-                # pose_reg_pred = slim.fully_connected(net, 3, scope='pose_reg')
-                landmark_base = slim.fully_connected(net, FLAGS.landmark_num * 2, scope='landmark_reg')
-                landmark_refine_pred = slim.fully_connected(refine_net, FLAGS.landmark_num * 2, scope='refine_landmark_reg')
-                landmark_pred = landmark_base + landmark_refine_pred
+                landmark_pred = slim.fully_connected(net, FLAGS.landmark_num * 2, scope='landmark_reg')
+                # pdb.set_trace()
+                # repmat_mean_shape = tf.tile(single_mean_shape, [inputs.get_shape()[0]])
+                # mean_shapes = tf.reshape(repmat_mean_shape, [-1, FLAGS.landmark_num * 2])
+                # mean_shape  + delta(S)
+                landmark_pred = tf.add(mean_shape, landmark_pred)
                 pose_reg_pred = slim.fully_connected(net, 3, scope='head_pose')
 
+                end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+            if is_training:
+                if FLAGS.loss_type == 'SF':
+                    cls_loss = cls_ohem(cls_prob, label)
+                elif FLAGS.loss_type == 'FL':
+                    cls_loss = focal_loss(cls_prob, label, config.FL.gamma, config.FL.alpha)
+                bbox_loss = bbox_ohem(bbox_pred, bbox_target, label)
+                landmark_loss = landmark_ohem(landmark_pred, landmark_target, label)
+                pose_reg_loss = pose_reg_ohem(pose_reg_pred, pose_reg_target, label)
+                return cls_prob, bbox_pred, pose_reg_pred, landmark_pred, cls_loss, bbox_loss, pose_reg_loss, landmark_loss, end_points
+            else:
+                cls_prob = tf.nn.softmax(logits=cls_prob)
+                return cls_prob, bbox_pred, pose_reg_pred, landmark_pred, end_points
+
+
+def RotationMatrix(angles):
+    # get rotation matrix by rotate angle
+    phi = angles[:, 0]
+    #gamma = angles[:, 1]
+    theta = angles[:, 2]
+    # angle quantization
+    # quantization_pitch_angle = 15 quantization_yaw_angle = 45 quantization_yaw_angle = 25
+    convert_scale = tf.constant(180 / 3.1415, dtype=tf.float32)
+
+    #phi = tf.cast((tf.cast((angles[:, 0] * convert_scale) / 15, dtype=tf.int32)) * 15, dtype=tf.float32) / convert_scale
+    phi_cos = tf.reshape(tf.cos(phi), [-1, 1]) * tf.constant([0, 0, 0, 0, 1, 0, 0, 0, 1], dtype=tf.float32)
+    phi_sin = tf.reshape(tf.sin(phi), [-1, 1]) * tf.constant([0, 0, 0, 0, 0, 1, 0, -1, 0], dtype=tf.float32)
+    R_x = tf.reshape(phi_cos + phi_sin, [-1, 3, 3]) + tf.constant([[1, 0, 0], [0, 0, 0], [0, 0, 0]], dtype=tf.float32)
+
+    gamma = tf.cast((tf.cast((angles[:, 1] * convert_scale) / 35, dtype=tf.int32)) * 35, dtype=tf.float32) / convert_scale
+    gamma_cos = tf.reshape(tf.cos(gamma), [-1, 1]) * tf.constant([1, 0, 0, 0, 0, 0, 0, 0, 1], dtype=tf.float32)
+    gamma_sin = tf.reshape(tf.sin(gamma), [-1, 1]) * tf.constant([0, 0, -1, 0, 0, 0, 1, 0, 0], dtype=tf.float32)
+    R_y = tf.reshape(gamma_cos + gamma_sin, [-1, 3, 3]) + tf.constant([[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+                                                                        dtype=tf.float32)
+    #theta = tf.cast((tf.cast((angles[:, 2] * convert_scale) / 25, dtype=tf.int32)) * 25, dtype=tf.float32) / convert_scale
+    theta_cos = tf.reshape(tf.cos(theta), [-1, 1]) * tf.constant([1, 0, 0, 0, 1, 0, 0, 0, 0], dtype=tf.float32)
+    theta_sin = tf.reshape(tf.sin(theta), [-1, 1]) * tf.constant([0, 1, 0, -1, 0, 0, 0, 0, 0], dtype=tf.float32)
+    R_z = tf.reshape(theta_cos + theta_sin, [-1, 3, 3]) + tf.constant([[0, 0, 0], [0, 0, 0], [0, 0, 1]],
+                                                                      dtype=tf.float32)
+    R = R_x * R_y * R_z
+    return R
+
+import pdb
+def JDAP_48Net_Landmark_Pose_Dynamic_Shape(inputs, label=None, bbox_target=None, landmark_target=None, pose_reg_target=None,
+                                            is_training=True):
+    mean_shape3d = tf.constant([[0.0802, 0.0811, 0.0938, 0.1062, 0.1246, 0.1657, 0.2180, 0.2896, 0.4070, 0.5342,
+                                 0.6274, 0.7040, 0.7712, 0.8133, 0.8430, 0.8716, 0.8919, 0.1519, 0.1955, 0.2516,
+                                 0.3053, 0.3540, 0.5631, 0.6166, 0.6760, 0.7383, 0.7866, 0.4501, 0.4410, 0.4321,
+                                 0.4265, 0.3647, 0.3905, 0.4273, 0.4668, 0.4972, 0.2201, 0.2537, 0.3041, 0.3501,
+                                 0.3059, 0.2541, 0.5614, 0.6095, 0.6610, 0.6993, 0.6569, 0.6028, 0.2833, 0.3312,
+                                 0.3901, 0.4212, 0.4537, 0.5140, 0.5632, 0.5073, 0.4614, 0.4154, 0.3710, 0.3319,
+                                 0.2973, 0.3800, 0.4198, 0.4613, 0.5539, 0.4592, 0.4187, 0.3799],
+                                [0.6231, 0.5374, 0.4583, 0.3891, 0.3194, 0.2710, 0.2506, 0.2338, 0.2172, 0.2226,
+                                 0.2298, 0.2430, 0.2851, 0.3514, 0.4189, 0.4963, 0.5822, 0.7785, 0.8166, 0.8314,
+                                 0.8298, 0.8184, 0.8088, 0.8153, 0.8114, 0.7906, 0.7472, 0.7319, 0.6876, 0.6439,
+                                 0.6005, 0.5418, 0.5403, 0.5345, 0.5366, 0.5354, 0.7178, 0.7413, 0.7395, 0.7156,
+                                 0.7106, 0.7089, 0.7047, 0.7242, 0.7205, 0.6932, 0.6892, 0.6954, 0.4273, 0.4625,
+                                 0.4829, 0.4769, 0.4797, 0.4532, 0.4129, 0.4067, 0.4003, 0.4014, 0.4052, 0.4155,
+                                 0.4297, 0.4484, 0.4491, 0.4441, 0.4160, 0.4339, 0.4352, 0.4382],
+                                [0.2044, 0.2481, 0.2865, 0.3352, 0.4202, 0.5468, 0.6890, 0.8215, 0.8846, 0.8473,
+                                 0.7332, 0.6060, 0.4914, 0.4134, 0.3682, 0.3335, 0.2936, 0.5755, 0.6464, 0.7020,
+                                 0.7413, 0.7655, 0.7875, 0.7737, 0.7461, 0.7039, 0.6433, 0.8227, 0.8955, 0.9705,
+                                 0.9986, 0.8655, 0.8982, 0.9173, 0.9062, 0.8795, 0.6462, 0.6957, 0.7021, 0.6977,
+                                 0.7097, 0.6904, 0.7186, 0.7326, 0.7384, 0.6980, 0.7335, 0.7407, 0.8248, 0.8921,
+                                 0.9310, 0.9397, 0.9377, 0.9114, 0.8539, 0.9140, 0.9402, 0.9423, 0.9314, 0.8961,
+                                 0.8303, 0.9074, 0.9227, 0.9162, 0.8559, 0.9207, 0.9223, 0.9115]], dtype=tf.float32)
+
+    with tf.variable_scope("JDAP_48Net_Landmark_Pose_Dynamic_Shape") as scope:
+        end_points_collection = scope.name + '_end_points'
+        with slim.arg_scope([slim.conv2d], normalizer_fn=None, weights_initializer=slim.xavier_initializer(),
+                            activation_fn=_prelu, weights_regularizer=slim.l2_regularizer(0.00001),
+                            biases_initializer=tf.zeros_initializer(), padding='valid',
+                            outputs_collections=[end_points_collection]):
+            with slim.arg_scope([slim.fully_connected], normalizer_fn=None, biases_initializer=tf.zeros_initializer(),
+                                weights_regularizer=slim.l2_regularizer(0.00001), activation_fn=None,
+                                outputs_collections=[end_points_collection]):
+                net = slim.conv2d(inputs, 32, kernel_size=3, scope='conv1')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1', padding='same')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, scope='conv2')
+                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool2')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 64, kernel_size=3, scope='conv3')
+                net = slim.max_pool2d(net, [2, 2], stride=2, scope='pool3')
+                print(net.get_shape())
+
+                net = slim.conv2d(net, 128, kernel_size=2, scope='conv4')
+                print(net.get_shape())
+
+                net = slim.flatten(net)
+                net = slim.fully_connected(net, 256, activation_fn=_prelu, scope='fc1')
+                print(net.get_shape())
+
+                cls_prob = slim.fully_connected(net, 2, scope='fc2')
+                bbox_pred = slim.fully_connected(net, 4, scope='fc3')
+                # Add Landmark and Pose task
+                landmark_pred = slim.fully_connected(net, FLAGS.landmark_num * 2, scope='landmark_reg')
+                # pdb.set_trace()
+                # repmat_mean_shape = tf.tile(single_mean_shape, [inputs.get_shape()[0]])
+                # mean_shapes = tf.reshape(repmat_mean_shape, [-1, FLAGS.landmark_num * 2])
+                # mean_shape  + delta(S)
+                pose_reg_pred = slim.fully_connected(net, 3, scope='head_pose')
+
+                result = RotationMatrix(pose_reg_pred)
+                zeros_temp = tf.expand_dims(tf.zeros_like(pose_reg_pred), [2])
+                zeros_same_shape = tf.reshape(tf.tile(zeros_temp, [1, 1, FLAGS.landmark_num]), [-1, 3 * FLAGS.landmark_num])
+                repmat_mean_shape3d = tf.reshape(tf.reshape(mean_shape3d, [1, -1]) + zeros_same_shape, [-1, 3, FLAGS.landmark_num])
+                dynamic_mean_shape = tf.matmul(result, repmat_mean_shape3d)
+                landmark_pred = tf.add(tf.reshape(dynamic_mean_shape[:, :2, :], [-1, FLAGS.landmark_num * 2]), landmark_pred)
                 end_points = slim.utils.convert_collection_to_dict(end_points_collection)
             if is_training:
                 if FLAGS.loss_type == 'SF':

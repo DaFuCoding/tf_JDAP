@@ -25,6 +25,8 @@ def IoU(box, boxes):
     Returns:
         iou: numpy.array, shape (n, )
     """
+    box = np.array(box).astype(np.float32)
+    boxes = np.array(boxes).astype(np.float32)
     box_area = (box[2] - box[0] + 1) * (box[3] - box[1] + 1)
     area = (boxes[:, 2] - boxes[:, 0] + 1) * (boxes[:, 3] - boxes[:, 1] + 1)
     xx1 = np.maximum(box[0], boxes[:, 0])
@@ -276,6 +278,3 @@ def calibrate_box(bbox, reg):
     aug = reg_m * reg
     bbox_c[:, 0:4] = bbox_c[:, 0:4] + aug
     return bbox_c
-
-
-

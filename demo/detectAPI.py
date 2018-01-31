@@ -12,7 +12,8 @@ from nets.JDAP_Net import JDAP_48Net as O_Net
 from nets.JDAP_Net import JDAP_48Net_Landmark
 from nets.JDAP_Net import JDAP_48Net_Pose
 from nets.JDAP_Net import JDAP_48Net_Landmark_Pose as O_AUX_Net
-from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Refine
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Mean_Shape
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Dynamic_Shape
 from nets.JDAP_Net import JDAP_aNet as A_Net
 from nets.JDAP_Net import JDAP_aNet_Cls as A_Cls_Net
 from fcn_detector import FcnDetector
@@ -55,7 +56,8 @@ class DetectAPI(object):
         if "onet" in test_mode:
             if 'landmark_pose' in test_mode:
                 self.aux_idx = 3
-                ONet = Detector(JDAP_48Net_Landmark_Pose_Refine, 48, batch_size[2], model_path[2], self.aux_idx)
+                #ONet = Detector(JDAP_48Net_Landmark_Pose_Dynamic_Shape, 48, batch_size[2], model_path[2], self.aux_idx)
+                ONet = Detector(JDAP_48Net_Landmark_Pose_Mean_Shape, 48, batch_size[2], model_path[2], self.aux_idx)
                 #ONet = Detector(O_AUX_Net, 48, batch_size[2], model_path[2], self.aux_idx)
                 #ONet = Detector(A_Net, 36, batch_size[2], model_path[2], self.aux_idx)
             elif 'landmark' in test_mode:
@@ -73,7 +75,7 @@ class DetectAPI(object):
         jdap_detector = JDAPDetector(detectors=detectors, is_ERC=False, min_face_size=min_face_size, threshold=thresh)
         return jdap_detector
 
-    def show_result(self, image, results, save_name=''):
+    def show_result(self, image, results, save_name='', is_cap=False):
         cal_boxes = results[0] if type(results) is tuple else results
         box_num = cal_boxes.shape[0]
 
@@ -99,8 +101,9 @@ class DetectAPI(object):
         if save_name != '':
             cv2.imwrite(save_name, image)
         else:
-            cv2.imshow("show result", image)
-            cv2.waitKey(0)
+            if is_cap == False:
+                cv2.imshow("show result", image)
+                cv2.waitKey(0)
 
     def draw_rectangle(self, image, rect, color=(0, 0, 200)):
         rect = [int(x) for x in rect]
@@ -188,7 +191,7 @@ def test_aux_net(name_list, dataset_path, prefix, epoch, batch_size, test_mode="
             cv2.waitKey(0)
 
 
-def test_single_net(image_list, prefix, epoch, stage, attribute=False):
+def test_single_net(prefix, epoch, stage, attribute='landmark_pose'):
     model_path = '%s-%s' % (prefix, epoch)
     # load pnet model
     if stage == 12:
@@ -196,16 +199,8 @@ def test_single_net(image_list, prefix, epoch, stage, attribute=False):
     elif stage == 24:
         detector = Detector(R_Net, 24, 1, model_path)
     elif stage == 48:
-        if attribute:
+        if 'landmark_pose' in attribute:
             detector = Detector(O_AUX_Net, 48, 1, model_path, aux_idx=3)
         else:
             detector = Detector(O_Net, 48, 1, model_path)
-    for image_name in image_list:
-        image = cv2.imread(image_name)
-        norm_img = (image.copy() - 127.5) * 0.0078125  # C H W
-        norm_img = norm_img[np.newaxis, :]
-        fms = detector.predict(norm_img)
-        # Print end_points keys
-        print(fms[-1].keys())
-        t = fms[-1]
-        print(t)
+    return detector

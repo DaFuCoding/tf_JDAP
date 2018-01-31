@@ -15,11 +15,11 @@ python ./train/train_auxiliary.py \
     --gpu_id='0' \
     --image_sum=986545 \
     --val_image_sum=120364 \
-    --logdir="./logdirs/${STAGE_NAME}/${STAGE_NAME}_wider_OHEM_0.7_wop_pnet_300WLP_refine_landmark" \
+    --logdir="./logdirs/${STAGE_NAME}/${STAGE_NAME}_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_yaw_bin35__dynamic_shape" \
     --loss_type='SF' \
     --is_ohem=True \
     --is_ERC=False \
-    --model_prefix="./models/${STAGE_NAME}/${STAGE_NAME}_wider_OHEM_0.7_wop_pnet_300WLP_refine_landmark7/${STAGE_NAME}" \
+    --model_prefix="./models/${STAGE_NAME}/${STAGE_NAME}_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_yaw_bin35_dynamic_shape/${STAGE_NAME}" \
     --tfrecords_root="${RECORD_ROOT}/${RECORD_NAME}/${RECORD_NAME}" \
     --tfrecords_num=4 \
     --image_size=${IMAGE_SIZE} \

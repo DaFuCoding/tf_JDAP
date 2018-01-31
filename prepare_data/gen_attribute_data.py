@@ -149,11 +149,14 @@ def convert_to_wider_face(gt_box, scale):
     h = gt_box[3] - gt_box[1] + 1
     gt_box[1] -= max(w, h) * scale
     return gt_box
+import matplotlib.pyplot as plt
 
 def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
     attrib_names = dataset_indicator.get_keys()
     patch_id = 0
     image_idx = 0
+    # mean shape in all candidate boxes of train set
+    mean_shape = np.zeros([136], dtype=np.float32)
     if vis is False:
         fout = open(output_file, 'w')
     for label_info in dataset_indicator.label_infos:
@@ -191,6 +194,12 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
             box_h = y2 - y1 + 1
             reg_landmark[::2] = (gt_landmarks[::2] - x1) / box_w
             reg_landmark[1::2] = (gt_landmarks[1::2] - y1) / box_h
+            mean_shape += reg_landmark
+            patch_id += 1
+            # x = reg_landmark[0::2]
+            # y = reg_landmark[1::2]
+            # plt.plot(x, y, 'b.')
+            # plt.show()
             if vis is False:
                 # Crop image patch
                 tmp = np.zeros((tmph[i], tmpw[i], 3), dtype=np.uint8)
@@ -198,7 +207,6 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
                 resized_img = cv2.resize(tmp, (net_size, net_size), interpolation=cv2.INTER_LINEAR)
 
                 # Save cropped image
-                patch_id += 1
                 save_file = os.path.join(save_dir, "attribute/%d.jpg" % patch_id)
                 reg_value = ['%.4f' % t for t in reg_landmark]
                 head_pose_str = ' '.join(['%.4f' % t for t in head_pose])
@@ -208,9 +216,9 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
                 cv2.imwrite(save_file, resized_img)
 
         # draw detection result
-        if vis:
+        if False:
             for point_id in range(LANDMARK_POINTS):
-                cv2.circle(image, (gt_landmarks[2 * point_id], gt_landmarks[2 * point_id + 1]), 4, (0, 200, 0), -1)
+                cv2.circle(image, (gt_landmarks[2 * point_id], gt_landmarks[2 * point_id + 1]), 1, (0, 200, 0), -1)
             cv2.rectangle(image, (gt_box[0], gt_box[1]), (gt_box[2], gt_box[3]), (0, 0, 200), 2)
             for box in boxes_square:
                 x1 = int(box[0])
@@ -218,9 +226,12 @@ def test_core(detector, dataset_indicator, save_dir, output_file, vis=False):
                 x2 = int(box[2])
                 y2 = int(box[3])
                 score = box[4]
-                cv2.rectangle(image, (x1, y1), (x2, y2), (200, 200, 0), 2)
+                cv2.rectangle(image, (x1, y1), (x2, y2), (200, 200, 0), 1)
             cv2.imshow('a', image)
             cv2.waitKey(0)
+
+    mean_shape = mean_shape / patch_id
+    np.save('300WLP_mean_shape.npy', mean_shape)
 
 
 if __name__ == '__main__':

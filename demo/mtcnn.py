@@ -7,6 +7,8 @@ import cv2
 
 from detectAPI import DetectAPI
 from prepare_data.data_base import FDDB
+from prepare_data.data_base import L300WP
+from prepare_data.data_base import LS3DW
 
 os.environ.setdefault('CUDA_VISIBLE_DEVICES', '1')
 
@@ -14,14 +16,16 @@ FLAGS = tf.flags.FLAGS
 FLAGS.ERC_thresh = 0.1
 FLAGS.landmark_num = 68
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Test mtcnn',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--dataset_name', dest='dataset_name', help='dataset_name',
-                        default='fddb',
+                        #default='fddb',
                         #default='celebA',
                         #default='wider',
-                        #default='300wp',
+                        default='300wp',
+                        #default='ls3dw',
                         type=str)
 
     parser.add_argument('--name_list', dest='name_list', help='output data folder',
@@ -34,8 +38,11 @@ def parse_args():
                         #default='/home/dafu/data/AFW/Annotation/AFWNameList.txt',
                         #default='/home/dafu/data/AFLW/data/aflw_rect_pose.txt',
                         #default='/home/dafu/data/300W-LP/300WP_pose.txt',
-                        #default='/home/dafu/data/LS3D-W/LS3D-W/menpo_test.txt',
-                        default='/home/dafu/data/LS3D-W/LS3D-W/aflw2000.txt',
+                        default='/home/dafu/data/LS3D-W/LS3D-W/menpo_test.txt',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/aflw2000_3d_gt.txt',
+                        #default='/home/dafu/data/AFLW2000_21pts_vis/Code/aflw2000_3d_gt.txt',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/test.txt',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/300VW-3D_file_name.txt',
                         type=str)
     parser.add_argument('--dataset_path', dest='dataset_path', help='dataset folder',
                         #default='/home/dafu/data/FDDB',
@@ -46,7 +53,11 @@ def parse_args():
                         #default='/home/dafu/data/AFW',
                         #default='/home/dafu/data/AFLW/data',
                         #default='/home/dafu/data/300W-LP',
-                        default='/home/dafu/data/LS3D-W/LS3D-W/AFLW2000-3D-Reannotated',
+                        default='/home/dafu/data/LS3D-W/LS3D-W/Menpo-3D',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/AFLW2000-3D-Reannotated',
+                        #default='/home/dafu/data/AFLW2000_21pts_vis',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/300W-Testset-3D',
+                        #default='/home/dafu/data/LS3D-W/LS3D-W/300VW-3D',
                         type=str)
     parser.add_argument('--test_mode', dest='test_mode', help='test net type, can be pnet, rnet or onet',
                         default='onet_landmark_pose', type=str)
@@ -70,12 +81,14 @@ def parse_args():
                                 # RNet
                                 '/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7_wop_pnet/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_OHEM_0.7_wop_pnet_wo_part/rnet',
-                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7_wop_pnet/rnet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/rnet/rnet_wider_OHEM_0.7_wop_pnet_add_gt/rnet',
                                 # ONet
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_test/onet',
-                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_refine_landmark7/onet',
+                                '/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_mean_shape/onet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_dynamic_shape/onet',
+                                #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_range_dynamic_shape/onet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_0.1w/onet',
+
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_0.1w_landmark_OHEM_0.7/onet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_landmark68_0.1w/onet',
                                 #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark51_0.1w/onet',
@@ -89,13 +102,13 @@ def parse_args():
 
                         ], type=str)
     parser.add_argument('--epoch', dest='epoch', help='epoch number of model to load', nargs="+",
-                        default=[13, 16, 3], type=int)
+                        default=[13, 16, 16], type=int)
     parser.add_argument('--batch_size', dest='batch_size', help='list of batch size used in prediction', nargs="+",
                         default=[2048, 256, 16], type=int)
     parser.add_argument('--thresh', dest='thresh', help='list of thresh for pnet, rnet, onet', nargs="+",
-                        default=[0.4, 0.1, 0.01], type=float)
+                        default=[0.4, 0.1, 0.1], type=float)
     parser.add_argument('--min_face', dest='min_face', help='minimum face size for detection',
-                        default=24, type=int)
+                        default=48, type=int)
     args = parser.parse_args()
     return args
 
@@ -104,7 +117,7 @@ if __name__ == '__main__':
     args = parse_args()
     print('Called with argument:')
     print(args)
-    output_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/onet/onet_OHEM_0.7_wop_pnet_300WLP_pose_16_0.4_0.1_0.01.txt'
+    output_file = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_16_0.1_0.01_0.01.txt'
     output = False
     detector = DetectAPI(args.prefix, args.epoch, args.test_mode, args.batch_size,
                          is_ERC=False, thresh=args.thresh, min_face_size=args.min_face)
@@ -114,10 +127,12 @@ if __name__ == '__main__':
     elif args.dataset_name == 'wider':
         pass
     elif args.dataset_name == '300wp':
-        pass
+        brew_fun = L300WP
+    elif args.dataset_name == 'ls3dw':
+        brew_fun = LS3DW
 
     Evaluator = brew_fun(args.dataset_path, args.name_list)
-    is_cap = False
+    is_cap = True
     import time
     if is_cap:
         cap = cv2.VideoCapture(0)
@@ -130,9 +145,9 @@ if __name__ == '__main__':
                 print("time: %d ms" % int((time.clock() - t) * 1000))
                 # Return detect result adapt to evaluation
                 if type(results) == np.ndarray and len(results):
-                    detector.show_result(frame, results)
+                    detector.show_result(frame, results, is_cap=True)
                 elif type(results) == tuple and results[0] is not None:
-                    detector.show_result(frame, results)
+                    detector.show_result(frame, results, is_cap=True)
 
                 # show a frame
                 cv2.imshow("capture", frame)
@@ -148,17 +163,17 @@ if __name__ == '__main__':
             fout = open(output_file, 'w')
         for label_info in Evaluator.label_infos:
             count += 1
-            if count % 13:
-                continue
+            # if count % 10:
+            #     continue
             if count % 100 == 0:
                 print(count)
-            image_name = Evaluator.label_parser(label_info)
-            print(image_name)
+            image_name = Evaluator.get_image_name(label_info)
+            #print(image_name)
             image = cv2.imread(image_name)
             # All output result
             results = detector.detect(image)
             if output:
-                fout.write(Evaluator.do_eval(label_info, results))
+                fout.write(Evaluator.do_eval(label_info, results, 'pose'))
             elif (type(results) == np.ndarray and len(results)) or (type(results) == tuple and results[0] is not None):
                 # Return detect result adapt to evaluation
                 if save_dir != '':

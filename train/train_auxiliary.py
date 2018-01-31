@@ -9,7 +9,8 @@ sys.path.append(osp.join('.'))
 import tensorflow as tf
 from prepare_data import stat_tfrecords
 from nets.JDAP_Net import JDAP_48Net_Landmark_Pose
-from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Refine
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Mean_Shape
+from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Dynamic_Shape
 from nets.JDAP_Net import JDAP_48Net_Pose
 from nets.JDAP_Net import JDAP_48Net_Landmark
 from nets.JDAP_Net import JDAP_aNet
@@ -289,7 +290,6 @@ def train_attribute_net(net_factory, model_prefix, logdir, end_epoch, net_size, 
         bbox_labels = tf.concat([reg_label_batch, attrib_bbox_reg_label_batch], axis=0)
 
         # Network Forward
-
         cls_prob_op, bbox_pred_op, head_pose_pred_op, landmark_pred_op, \
         cls_loss_op, bbox_loss_op, head_pose_loss_op, landmark_loss_op, end_points = \
             net_factory(inputs=images, label=cls_labels, bbox_target=bbox_labels,
@@ -392,7 +392,8 @@ def main(_):
         print (k, v)
     #net_factory = JDAP_aNet
     #net_factory = JDAP_48Net_Lanmark_Pose
-    net_factory = JDAP_48Net_Landmark_Pose_Refine
+    #net_factory = JDAP_48Net_Landmark_Pose_Mean_Shape
+    net_factory = JDAP_48Net_Landmark_Pose_Dynamic_Shape
     ''' TFRecords input'''
     cls_tfrecords = []
     val_tfrecords = []
