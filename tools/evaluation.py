@@ -49,15 +49,17 @@ def parse_args():
                         type=str)
     parser.add_argument('--eval_file', dest='eval_file', help='eval file name',
                         # landmark 68 and pose
-    default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_mean_shape_16_0.1_0.01_0.01.txt',
+    #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_mean_shape_16_0.1_0.01_0.01.txt',
     #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_0.1w_16_0.1_0.01_0.01.txt',
                         # landmark 7 and pose
-    #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_landmark7_1w_16_0.1_0.01_0.01.txt',
+    default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_landmark7_1w_16_0.1_0.01_0.01.txt',
+
 
                         # single task
     #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_landmark68_0.1w_16_0.1_0.01_0.01.txt',
     #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_16_0.1_0.01_0.01.txt',
-
+    #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_pose_yaw_16_0.1_0.01_0.01.txt',
+    #default='/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/aflw2000/onet_OHEM_0.7_wop_pnet_300WLP_landmark68_1w_mean_shape_16_0.1_0.01_0.01.txt',
                         type=str)
 
     args = parser.parse_args()
@@ -69,7 +71,7 @@ def draw_rectangle(image, rect, color=(0, 0, 200)):
 from demo.detectAPI import test_single_net
 import tensorflow as tf
 FLAGS = tf.flags.FLAGS
-FLAGS.landmark_num = 68
+FLAGS.landmark_num = 7
 from tools.utils import *
 if __name__ == '__main__':
     args = parse_args()
@@ -82,9 +84,19 @@ if __name__ == '__main__':
         print(NotImplementedError)
 
     Evaluator = brew_fun(args.dataset_path, args.name_list)
-    detector = test_single_net('../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_0.1w/onet',
-                               16, 48, 'landmark_pose')
-    results = Evaluator.eval_accuracy(args.eval_file, eval_dim=68, eval_mode='landmark_pose', detector=detector,
+    # detector = test_single_net(
+    #     #'../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_1w_mean_shape/onet'
+    #     '../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark68_0.1w/onet'
+    #     ,16, 48, 'landmark_pose')
+
+    detector = test_single_net(
+        #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose/onet'
+        #'/home/dafu/workspace/FaceDetect/tf_JDAP/models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_yaw/onet'
+        #'../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_landmark68_1w_mean_shape/onet'
+        #'../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_landmark68_0.1w/onet'
+        '../models/onet/onet_wider_OHEM_0.7_wop_pnet_300WLP_pose_landmark7/onet'
+        ,16, 48, 'landmark_pose')
+    results = Evaluator.eval_accuracy(args.eval_file, eval_dim=7, eval_mode='landmark_pose', detector=detector,
                                       vis=False)
 
 

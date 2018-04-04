@@ -30,7 +30,7 @@ class JDAPDetector(object):
             tmp[dy[i]:edy[i] + 1, dx[i]:edx[i] + 1, :] = img[y[i]:ey[i] + 1, x[i]:ex[i] + 1, :]
             cropped_ims[i, :, :, :] = resize_image_by_wh(tmp, (net_size, net_size))
         return cropped_ims
-
+    import cv2
     def detect_pnet(self, image):
         """Get face candidates through pnet
 
@@ -54,6 +54,8 @@ class JDAPDetector(object):
         """
         # FCN in PNet
         all_boxes = list()
+        scale_num = 1
+        show_result = False
         for current_scale, tuple_wh in zip(self.scales, self.scales_wh):
             im_resized = resize_image_by_wh(image, tuple_wh)
             cls_map, bbox_reg, end_points = self.pnet_detector.predict(im_resized)
@@ -61,10 +63,39 @@ class JDAPDetector(object):
             # Numpy slice without security check
             if boxes.size == 0:
                 continue
+            test_image = cv2.imread('/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/MultiScale/paper_test.jpg')
+            root_path = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/MultiScale/show/paper_test_'
+            if show_result:
+
+                feature_map = cls_map[0, :, :, 1]
+                feature_map[feature_map <= self.thresh[0]] = 0
+                feature_map = (feature_map * 255).astype(np.uint8)
+                cv2.imwrite(root_path + str(scale_num) + '_feature_map.jpg', feature_map)
+                test_image = cv2.resize(test_image, tuple_wh, interpolation=cv2.INTER_AREA)
+                cv2.imwrite(root_path + str(scale_num) + '.jpg', test_image)
+
+                nms_image = test_image.copy()
+
+                for rect in boxes[:, :4]:
+                    rect = [int(x) for x in rect]
+                    cv2.rectangle(test_image, (rect[0], rect[1]), (rect[2], rect[3]), (0,0,255), 2)
+                cv2.imwrite(root_path + str(scale_num) + '_det.jpg', test_image)
+                #cv2.imshow('a', test_image)
+                #cv2.waitKey(0)
+
             keep = py_nms(boxes[:, :5], 0.5, 'Union')
             boxes = boxes[keep]  # if keep is [], boxes is also []
             if boxes.size == 0:
                 continue
+            if show_result:
+                for rect in boxes[:, :4]:
+                    rect = [int(x) for x in rect]
+                    cv2.rectangle(nms_image, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)
+                cv2.imwrite(root_path + str(scale_num) + '_local_nms.jpg', nms_image)
+                #cv2.imshow('local_nms', nms_image)
+                #cv2.waitKey(0)
+            scale_num += 1
+
             all_boxes.append(boxes)
 
         if len(all_boxes) == 0:
@@ -87,6 +118,13 @@ class JDAPDetector(object):
                              all_boxes[:, 3] + all_boxes[:, 8] * bbh,
                              all_boxes[:, 4]])
         boxes_c = boxes_c.T
+        if show_result:
+            pnet_image = image.copy()
+            for rect in boxes_c[:, :4]:
+                rect = [int(x) for x in rect]
+                cv2.rectangle(pnet_image, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)
+            cv2.imwrite(root_path + 'pnet.jpg', pnet_image)
+
         return boxes_c
         #return boxes, boxes_c
 
@@ -108,8 +146,17 @@ class JDAPDetector(object):
         boxes_c: numpy array
             boxes after calibration
         """
+        show_result = False
+        root_path = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/MultiScale/show/paper_test_'
+
         dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
+        if show_result:
+            rnet_image = image.copy()
+            for rect in dets[:, :4]:
+                rect = [int(x) for x in rect]
+                cv2.rectangle(rnet_image, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)
+                cv2.imwrite(root_path + 'rnet_square.jpg', rnet_image)
 
         cropped_ims = self._candidate_arrange(dets, image, self.rnet_detector.data_size)
 
@@ -135,6 +182,12 @@ class JDAPDetector(object):
 
         boxes_c = calibrate_box(boxes, reg[keep])
 
+        if show_result:
+            rnet_image_final = image.copy()
+            for rect in boxes_c[:, :4]:
+                rect = [int(x) for x in rect]
+                cv2.rectangle(rnet_image_final, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)
+                cv2.imwrite(root_path + 'rnet_final.jpg', rnet_image_final)
         return boxes_c
 
     def detect_onet(self, image, dets, aux_idx):
@@ -154,9 +207,17 @@ class JDAPDetector(object):
         boxes_c: numpy array
             boxes after calibration
         """
+        show_result = False
+        root_path = '/home/dafu/workspace/FaceDetect/tf_JDAP/evaluation/MultiScale/show/paper_test_'
+
         dets = convert_to_square(dets)
         dets[:, 0:4] = np.round(dets[:, 0:4])
-
+        if show_result:
+            anet_image = image.copy()
+            for rect in dets[:, :4]:
+                rect = [int(x) for x in rect]
+                cv2.rectangle(anet_image, (rect[0], rect[1]), (rect[2], rect[3]), (0, 0, 255), 2)
+                cv2.imwrite(root_path + 'anet_square.jpg', anet_image)
         cropped_ims = self._candidate_arrange(dets, image, self.onet_detector.data_size)
 
         if aux_idx == 0:

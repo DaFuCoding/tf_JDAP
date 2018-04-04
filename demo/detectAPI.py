@@ -13,7 +13,9 @@ from nets.JDAP_Net import JDAP_48Net_Landmark
 from nets.JDAP_Net import JDAP_48Net_Pose
 from nets.JDAP_Net import JDAP_48Net_Landmark_Pose as O_AUX_Net
 from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Mean_Shape
+from nets.JDAP_Net import JDAP_48Net_Landmark_Mean_Shape
 from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Dynamic_Shape
+from nets.JDAP_Net import JDAP_48Net_Pose_Branch
 from nets.JDAP_Net import JDAP_aNet as A_Net
 from nets.JDAP_Net import JDAP_aNet_Cls as A_Cls_Net
 from fcn_detector import FcnDetector
@@ -62,10 +64,12 @@ class DetectAPI(object):
                 #ONet = Detector(A_Net, 36, batch_size[2], model_path[2], self.aux_idx)
             elif 'landmark' in test_mode:
                 self.aux_idx = 1
-                ONet = Detector(JDAP_48Net_Landmark, 48, batch_size[2], model_path[2], self.aux_idx)
+                #ONet = Detector(JDAP_48Net_Landmark, 48, batch_size[2], model_path[2], self.aux_idx)
+                ONet = Detector(JDAP_48Net_Landmark_Mean_Shape, 48, batch_size[2], model_path[2], self.aux_idx)
             elif 'pose' in test_mode:
                 self.aux_idx = 2
                 ONet = Detector(JDAP_48Net_Pose, 48, batch_size[2], model_path[2], self.aux_idx)
+                #ONet = Detector(JDAP_48Net_Pose_Branch, 48, batch_size[2], model_path[2], self.aux_idx)
             else:
                 #ONet = Detector(A_Cls_Net, 36, batch_size[2], model_path[2])
                 ONet = Detector(O_Net, 48, batch_size[2], model_path[2])
@@ -119,9 +123,12 @@ class DetectAPI(object):
     def draw_text(self, image, rect, text, color=(200, 0, 200)):
         rect = [int(x) for x in rect]
         if len(text.shape):
-            s = ' '.join([str('%.1f' % x) for x in text])
+            s = ' '.join([str('%.0f' % x) for x in text])
+            #s = str(int(text[1]))
             # Draw top left
-            cv2.putText(image, s, (rect[0], rect[1] + 15), 1, 0.9, (0, 255, 0), 2)
+            extra_h = int((rect[3] - rect[1]) * 0.2)
+            #scale = (rect[3] - rect[1]) / 64.
+            cv2.putText(image, s, (rect[0], rect[1] + extra_h), 1, 1, (255, 0, 255), 2)
 
         else:
             s = str('%.4f' % text)
@@ -201,6 +208,12 @@ def test_single_net(prefix, epoch, stage, attribute='landmark_pose'):
     elif stage == 48:
         if 'landmark_pose' in attribute:
             detector = Detector(O_AUX_Net, 48, 1, model_path, aux_idx=3)
+            #detector = Detector(JDAP_48Net_Landmark_Pose_Mean_Shape, 48, 1, model_path, aux_idx=3)
+        elif 'landmark' in attribute:
+            detector = Detector(JDAP_48Net_Landmark_Mean_Shape, 48, 1, model_path, aux_idx=1)
+            #etector = Detector(JDAP_48Net_Landmark, 48, 1, model_path, aux_idx=1)
+        elif 'pose' in attribute:
+            detector = Detector(JDAP_48Net_Pose, 48, 1, model_path, aux_idx=2)
         else:
             detector = Detector(O_Net, 48, 1, model_path)
     return detector

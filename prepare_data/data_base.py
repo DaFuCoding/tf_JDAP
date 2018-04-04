@@ -7,7 +7,7 @@ import cv2
 __all__ = ['FDDB', 'WIDER', 'CelebA', 'AFLW', 'L300WP', 'LS3DW']
 
 
-def redetect(image_info, detector):
+def redetect(image_info, detector, eval_mode):
     image = cv2.imread(image_info['image_name'])
     height, width, _ = image.shape
     gt_box = image_info['gt_boxes']
@@ -29,20 +29,31 @@ def redetect(image_info, detector):
         tmp[dy[i]:edy[i] + 1, dx[i]:edx[i] + 1, :] = image[y[i]:ey[i] + 1, x[i]:ex[i] + 1, :]
         cropped_ims[i, :, :, :] = resize_image_by_wh(tmp, (48, 48))
     results = detector.predict(cropped_ims)
+    landmark_reg = []
+    head_pose = []
+    if eval_mode == 'landmark_pose':
+        head_pose = results[2]
+    elif eval_mode == 'landmark':
+        head_pose = None
+    elif eval_mode == 'pose':
+        head_pose = results[-1]
+        landmark_reg = None
 
-    head_pose = results[2]
-    landmark_reg = np.reshape(results[-1][0], [-1, 2])
-    # print(head_pose * 180 / 3.14)
-    land_point = np.transpose(
-        np.vstack((square_bbox[0] + landmark_reg[:, 0].T * max_side,
-                   square_bbox[1] + landmark_reg[:, 1].T * max_side))).astype(np.int32)
+    if landmark_reg is not None:
+        landmark_reg = np.reshape(results[-1][0], [-1, 2])
+        land_point = np.transpose(
+            np.vstack((square_bbox[0] + landmark_reg[:, 0].T * max_side,
+                       square_bbox[1] + landmark_reg[:, 1].T * max_side))).astype(np.int32)
+        land_point = np.reshape(land_point, [1, -1])
+    else:
+        land_point = []
     # gt_landmark = image_info['landmarks']
     # for l in range(68):
     #     cv2.circle(image, (gt_landmark[2 * l], gt_landmark[2 * l + 1]), 1, (200, 0, 0), 2)
     #     cv2.circle(image, (land_point[l][0], land_point[l][1]), 1, (0, 0, 200), 2)
     # cv2.imshow('a', image)
     # cv2.waitKey(0)
-    land_point = np.reshape(land_point, [1, -1])
+
     return head_pose, land_point
 
 
@@ -109,7 +120,7 @@ class _DataBase(object):
                     fail_image_info.append(gt_result)
                     is_fail_detect = True
                     best_id = 0
-                    pose_pred, landmark_pred = redetect(gt_result, detector)
+                    pose_pred, landmark_pred = redetect(gt_result, detector, eval_mode)
                 else:
                     ious = IoU(gt_box, box_pred)
                     best_id = np.argmax(ious)
@@ -118,12 +129,13 @@ class _DataBase(object):
                         fail_image_info.append(gt_result)
                         is_fail_detect = True
                         best_id = 0
-                        pose_pred, landmark_pred = redetect(gt_result, detector)
+                        pose_pred, landmark_pred = redetect(gt_result, detector, eval_mode)
 
                 if is_fail_detect == False:
                     if 'pose' in eval_mode:
-                        pose_pred = np.reshape(pred_info[:cand_num * 3], [cand_num, 3]).astype(np.float32)
-                        pred_info = pred_info[cand_num * 3:]
+                        pose_dim = 3
+                        pose_pred = np.reshape(pred_info[:cand_num * pose_dim], [cand_num, pose_dim]).astype(np.float32)
+                        pred_info = pred_info[cand_num * pose_dim:]
                     if 'landmark' in eval_mode:
                         landmark_pred = np.reshape(pred_info, [cand_num, -1]).astype(np.int32)
 
@@ -163,9 +175,12 @@ class _DataBase(object):
             if 'landmark' in eval_mode:
                 #print(yaw_pose_cls_error_landmark / yaw_pose_cls_sample_num)
                 print("small    medium  large")
-                print(np.sum(np.transpose(yaw_pose_cls_error_landmark) / yaw_pose_cls_sample_num, axis=0))
+                landmark_error = np.sum(np.transpose(yaw_pose_cls_error_landmark) / yaw_pose_cls_sample_num, axis=0) * 100 / eval_dim
+                print(landmark_error)
+                print(np.mean(landmark_error))
+                print(np.std(landmark_error))
             if 'pose' in eval_mode:
-                print(np.transpose((np.transpose(yaw_pose_cls_error_pose) / yaw_pose_cls_sample_num) * 180 / 3.14))
+                print((np.transpose(yaw_pose_cls_error_pose) / yaw_pose_cls_sample_num) * 180 / 3.14)
         results = {'fail_image_info': fail_image_info, 'yaw_pose_cls_sample_num': yaw_pose_cls_sample_num,
                    'yaw_pose_cls_error_pose': yaw_pose_cls_error_pose,
                    'yaw_pose_cls_error_landmark': yaw_pose_cls_error_landmark}
@@ -210,7 +225,7 @@ class FDDB(_DataBase):
 
 
 class WIDER(_DataBase):
-    def __init__(self, mode):
+    def __init__(self, dataset_root_path='', image_name_file='', mode='train'):
         # User custom
         dataset_root_path = '/home/dafu/data/WIDER_FACE'
         if mode == 'train':
@@ -219,12 +234,16 @@ class WIDER(_DataBase):
         elif mode == 'val':
             image_name_file = 'wider_face_split/wider_val_annotation.txt'
             image_dir_name = 'WIDER_val/images'
+        elif mode == 'test':
+            image_name_file = 'wider_face_split/wider_val_annotation.txt'
+            image_dir_name = 'WIDER_test/images'
         else:
             raise Exception("mode use 'train' or 'val'.")
         image_name_file = osp.join(dataset_root_path, image_name_file)
         super(WIDER, self).__init__(dataset_root_path, image_name_file)
         self.dataset_image_path = osp.join(dataset_root_path, image_dir_name)
         self.mode = mode
+        self.is_make_empty_dir = False
 
 
     # TODO: parser regular
@@ -237,6 +256,52 @@ class WIDER(_DataBase):
     def get_image_name(self, label_info):
         image_name = label_info.strip().split()[0]
         return osp.join(self.dataset_image_path, image_name)
+
+    def make_empty_dir(self, output_dir_root):
+        for label_info in self.label_infos:
+            curr_dir_name = self.get_image_name(label_info).split('/')[-2]
+            make_dir_name = os.path.join(output_dir_root, curr_dir_name)
+            if not os.path.exists(make_dir_name):
+                os.makedirs(make_dir_name)
+        self.is_make_empty_dir = True
+
+    def do_eval(self, label_info, results, output_dir_root):
+        """ Format
+            < image name i >
+            < number of faces in this image = im >
+            < face i1 >
+            < face i2 >
+            ...
+            < face im >
+        """
+        if self.is_make_empty_dir == False:
+            self.make_empty_dir(output_dir_root)
+        image_name = self.get_image_name(label_info)
+        split_info = image_name.split('/')
+        pure_image_name = split_info[-1]
+        output_dir_name = os.path.join(output_dir_root, split_info[-2])
+        output_file_name = os.path.join(output_dir_name, pure_image_name[:-4] + '.txt')
+        cal_boxes = results[0] if type(results) is tuple else results
+        write_result = '%s \n' % pure_image_name
+        if (cal_boxes is None) or len(cal_boxes) == 0:
+            print(pure_image_name + ' fail to detect.')
+            write_result += '0 \n'
+        else:
+            box_num = cal_boxes.shape[0]
+            x = cal_boxes[:, 0]
+            y = cal_boxes[:, 1]
+            w = cal_boxes[:, 2] - cal_boxes[:, 0] + 1
+            h = cal_boxes[:, 3] - cal_boxes[:, 1] + 1
+            scores = cal_boxes[:, 4]
+
+            write_result += '%d\n' % box_num
+            for i in range(box_num):
+                # Face rect and score
+                write_result += '%d %d %d %d %.4f\n' % (x[i], y[i], w[i], h[i], scores[i])
+        fout = open(output_file_name, 'w')
+        fout.write(write_result)
+        fout.close()
+        return write_result
 
 
 class L300WP(_DataBase):
@@ -287,7 +352,10 @@ class L300WP(_DataBase):
             write_result += ''.join(['%d ' % x for x in best_box[box_id][:-1]])
         if has_head_pose:
             for box_id in range(cand_box_num):
-                write_result += '%.4f %.4f %.4f ' % (pose_reg[box_id][0], pose_reg[box_id][1], pose_reg[box_id][2])
+                if pose_reg.shape[1] == 1:
+                    write_result += '%.4f ' % (pose_reg[box_id][0])
+                else:
+                    write_result += '%.4f %.4f %.4f ' % (pose_reg[box_id][0], pose_reg[box_id][1], pose_reg[box_id][2])
         if has_landmark:
             landmard_pt_num = landmark_reg.shape[-1] // 2
             for box_id in range(cand_box_num):

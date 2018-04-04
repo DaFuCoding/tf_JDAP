@@ -8,12 +8,14 @@ import os.path as osp
 sys.path.append(osp.join('.'))
 import tensorflow as tf
 from prepare_data import stat_tfrecords
-from nets.JDAP_Net import JDAP_48Net_Landmark_Pose
-from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Mean_Shape
-from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Dynamic_Shape
-from nets.JDAP_Net import JDAP_48Net_Pose
-from nets.JDAP_Net import JDAP_48Net_Landmark
-from nets.JDAP_Net import JDAP_aNet
+# from nets.JDAP_Net import JDAP_48Net_Landmark_Pose
+# from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Mean_Shape
+# from nets.JDAP_Net import JDAP_48Net_Landmark_Mean_Shape
+# from nets.JDAP_Net import JDAP_48Net_Landmark_Pose_Dynamic_Shape
+# from nets.JDAP_Net import JDAP_48Net_Pose
+# from nets.JDAP_Net import JDAP_48Net_Landmark
+# from nets.JDAP_Net import JDAP_aNet
+from nets.JDAP_Net import *
 import train_core
 import re
 import hp_config
@@ -56,8 +58,8 @@ def train_landmark_net(model_prefix, logdir, end_epoch, net_size, tfrecords, att
 
         cls_prob_op, bbox_pred_op, landmark_pred_op, \
         cls_loss_op, bbox_loss_op, landmark_loss_op, end_points = \
-            JDAP_48Net_Landmark(inputs=images, label=cls_labels, bbox_target=bbox_labels,
-                               landmark_target=attrib_land_reg_batch)
+            JDAP_48Net_Landmark_Mean_Shape(inputs=images, label=cls_labels, bbox_target=bbox_labels,
+                                           landmark_target=attrib_land_reg_batch)
         #########################################
         # Configure the optimization procedure. #
         #########################################
@@ -391,9 +393,11 @@ def main(_):
     for k, v in global_param_dict.items():
         print (k, v)
     #net_factory = JDAP_aNet
-    #net_factory = JDAP_48Net_Lanmark_Pose
+    #net_factory = JDAP_48Net_Pose
     #net_factory = JDAP_48Net_Landmark_Pose_Mean_Shape
-    net_factory = JDAP_48Net_Landmark_Pose_Dynamic_Shape
+    #net_factory = JDAP_48Net_Landmark_Pose_Dynamic_Shape
+    net_factory = JDAP_48Net_Landmark_Mean_Shape
+
     ''' TFRecords input'''
     cls_tfrecords = []
     val_tfrecords = []
@@ -413,16 +417,16 @@ def main(_):
         print(tfrecords_root + "_300WLP_68-%.5d-of-0000%d" % (i, tfrecords_num))
         attribute_tfrecords.append(tfrecords_root + "_300WLP_68-%.5d-of-0000%d" % (i, tfrecords_num))
 
-    train_attribute_net(net_factory=net_factory, model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
-                        end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
-                        attrib_tfrecords=attribute_tfrecords, frequent=FLAGS.frequent)
-
+    # train_attribute_net(net_factory=net_factory, model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
+    #                     end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
+    #                     attrib_tfrecords=attribute_tfrecords, frequent=FLAGS.frequent)
+    #
     # train_landmark_net(model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
     #                    end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
     #                    attrib_tfrecords=attribute_tfrecords, frequent=FLAGS.frequent)
-    # train_pose_net(model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
-    #                end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
-    #                attrib_tfrecords=attribute_tfrecords, frequent=FLAGS.frequent)
+    train_pose_net(model_prefix=FLAGS.model_prefix, logdir=FLAGS.logdir,
+                   end_epoch=FLAGS.end_epoch, net_size=FLAGS.image_size, tfrecords=cls_tfrecords,
+                   attrib_tfrecords=attribute_tfrecords, frequent=FLAGS.frequent)
 
 
 if __name__ == '__main__':
